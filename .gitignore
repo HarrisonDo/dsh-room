@@ -29,3 +29,4 @@ deploy/town/backup/
 deploy/town/caddy-data/
 deploy/town/caddy-config/
 deploy/town/words.txt
+!deploy/town/.env.example
