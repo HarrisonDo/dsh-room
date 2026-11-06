@@ -154,6 +154,7 @@ export const CSS = `
 .rk-mapnew span{font-size:24px;color:var(--rk-sub)}
 .rk-sheet-chat .rk-sheet-body{display:flex;flex-direction:column;padding-bottom:8px}
 .rk-chat-who{font-size:12.5px;margin-bottom:6px;display:flex;flex-direction:column}
+.rk-chat-head{display:flex;align-items:center;justify-content:space-between;gap:6px}
 .rk-chat-who small{color:var(--rk-sub);font-size:11px}
 .rk-chat-log{flex:1;overflow:auto;display:flex;flex-direction:column;gap:6px;padding:4px 0;min-height:80px}
 .rk-msg{display:flex}

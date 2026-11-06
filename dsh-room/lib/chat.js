@@ -23,6 +23,7 @@ export function cleanRequest(p) {
   const c = (p && p.character) || {}, r = (p && p.room) || {}, a = (p && p.agent) || {};
   return {
     text,
+    group: !!(p && p.group),
     agentName: str(a.name || c.name || '大肥鱼', 24),
     persona: str(c.persona, MAX_FIELD),
     scenario: str(c.scenario, 2000),
@@ -46,6 +47,7 @@ export function systemPrompt(q) {
     others.length ? `一起在这个房间的：${others.map((a) => a.name + (a.doing ? `（${a.doing}）` : '')).join('、')}。` : '',
     r.furniture.length ? `房间里有：${r.furniture.join('、')}。` : '',
     r.rooms.length ? `家里的房间：${r.rooms.join('、')}。` : '',
+    q.group ? '这是群聊：主人在和房间里所有角色说话。历史里以「名字：」开头的是其他角色说的。你只代表自己回一句，不替别人说话，不重复别人说过的。' : '',
     '回复规则：用口语、第一人称，一到两句，不超过 60 字；不要旁白、不要括号动作描写、不要 Markdown。',
     '主人让你做事或你自己想动时，在回复最后写一个动作标记（只写一个，不想动就不写）：',
     '[[wave]] 招手 · [[dance]] 跳舞 · [[sleep]] 去睡觉 · [[read]] 去看书 · [[goto:家具名]] 走到家具旁 · [[use:家具名]] 使用家具 · [[room:房间名]] 去别的房间 · [[emote:heart]] 冒爱心。',

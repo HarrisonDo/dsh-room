@@ -142,3 +142,9 @@ test('Agent 工具：房间没打开时如实返回，打开后命令进队列�
   assert.match(await look.execute({}), /没有打开/);
   for (const t of [look, say, act]) { assert.equal(typeof t.output.render, 'function'); assert.equal(t.parameters.type, 'object'); }
 });
+
+test('group chat adds the group rule only when asked', () => {
+  assert.equal(cleanRequest({ text: 'hi' }).group, false);
+  assert.match(systemPrompt(cleanRequest({ text: 'hi', group: 1 })), /群聊/);
+  assert.doesNotMatch(systemPrompt(cleanRequest({ text: 'hi' })), /群聊/);
+});

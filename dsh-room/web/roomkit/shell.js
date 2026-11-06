@@ -384,10 +384,12 @@ export class Shell {
   }
 
   _renderChat() {
-    const app = this.app, a = app.focusAgent();
+    const app = this.app, a = app.focusAgent(), group = this.chatGroup && app.agents.size > 1;
+    const who = group ? `和 <b>全屋 ${app.agents.size} 位</b> 群聊` : a ? `和 <b>${esc(a.name)}</b> 聊天` : '房间里没有角色';
+    const toggle = app.agents.size > 1 ? `<button class="rk-btn${group ? ' on' : ''}" data-s="chat-group" title="一句话发给房间里所有角色，轮流回答">👥 群聊</button>` : '';
     const status = (app.ext && app.ext.chatStatus && app.ext.chatStatus()) || (app.ext && app.ext.chat ? '接入 DSH 模型' : '离线台词模式（接入 DSH 后可用模型对话）');
     this.el.body.innerHTML = `
-      <div class="rk-chat-who"><span>${a ? `和 <b>${esc(a.name)}</b> 聊天` : '房间里没有角色'}</span><small>${esc(status)}</small></div>
+      <div class="rk-chat-who"><span class="rk-chat-head"><span>${who}</span>${toggle}</span><small>${esc(status)}</small></div>
       <div class="rk-chat-log"></div>
       <div class="rk-chat-bar"><input class="rk-chat-in" type="text" maxlength="300" placeholder="${a ? '说点什么…（比如：去睡觉吧）' : ''}" ${a ? '' : 'disabled'}><button class="rk-btn on" data-s="chat-send">发送</button></div>`;
     this._renderChatLog();
@@ -397,27 +399,33 @@ export class Shell {
   _renderChatLog() {
     const log = this.el.body.querySelector('.rk-chat-log');
     if (!log) return;
-    log.innerHTML = this.chatLog.length ? this.chatLog.map((m) => `<div class="rk-msg ${m.role}${m.pending ? ' pending' : ''}"><span>${esc(m.text)}</span>${m.note ? `<small>${esc(m.note)}</small>` : ''}</div>`).join('') : '<div class="rk-hint">她会按自己的性格回答；说"去睡觉""看会儿书""去客厅看电视"之类的话，她会真的去做。</div>';
+    log.innerHTML = this.chatLog.length ? this.chatLog.map((m) => `<div class="rk-msg ${m.role}${m.pending ? ' pending' : ''}"><span>${m.who && this.chatGroup ? `<b>${esc(m.who)}</b>：` : ''}${esc(m.text)}</span>${m.note ? `<small>${esc(m.note)}</small>` : ''}</div>`).join('') : '<div class="rk-hint">她会按自己的性格回答；说"去睡觉""看会儿书""去客厅看电视"之类的话，她会真的去做。</div>';
     log.scrollTop = log.scrollHeight;
   }
   async _sendChat() {
     const app = this.app, inp = this.el.body.querySelector('.rk-chat-in');
     const text = inp && inp.value.trim();
-    const a = app.focusAgent();
-    if (!text || !a || this._chatBusy) return;
+    // 群聊：同一句话按顺序发给房间里的角色（最多 4 位），后说的能看到前面的回答
+    const group = this.chatGroup && app.agents.size > 1;
+    const list = group ? [...app.agents.values()].slice(0, 4) : [app.focusAgent()].filter(Boolean);
+    if (!text || !list.length || this._chatBusy) return;
     inp.value = '';
     this.chatLog.push({ role: 'user', text });
-    const pend = { role: 'bot', text: a.name + ' 正在想…', pending: true };
-    this.chatLog.push(pend);
     this._renderChatLog();
     this._chatBusy = true;
-    let res;
-    try { res = await app.chat(a, text, this.chatLog.filter((m) => !m.pending && m !== pend).slice(-13, -1)); } catch (e) { res = { text: '（' + (e.message || '没听清') + '）', acts: [] }; }
+    for (const a of list) {
+      const pend = { role: 'bot', who: a.name, text: a.name + ' 正在想…', pending: true };
+      this.chatLog.push(pend);
+      if (this.page === 'chat') this._renderChatLog();
+      const history = this.chatLog.filter((m) => !m.pending && m.text).slice(-13, -1);
+      let res;
+      try { res = await app.chat(a, text, history, { group }); } catch (e) { res = { text: '（' + (e.message || '没听清') + '）', acts: [] }; }
+      pend.pending = false;
+      pend.text = res.text || '……';
+      if (res.note) pend.note = res.note;
+      if (this.page === 'chat') this._renderChatLog();
+    }
     this._chatBusy = false;
-    pend.pending = false;
-    pend.text = res.text || '……';
-    if (res.note) pend.note = res.note;
-    if (this.page === 'chat') this._renderChatLog();
     if (this.chatLog.length > 60) this.chatLog.splice(0, this.chatLog.length - 60);
   }
 
@@ -532,6 +540,7 @@ export class Shell {
       case 'conn': this.open('conn'); break;
       case 'close': this.close(); break;
       case 'chat-send': this._sendChat(); break;
+      case 'chat-group': this.chatGroup = !this.chatGroup; this._renderChat(); break;
       case 'story-go': { const s = this.pendingStory; this.pendingStory = null; if (s) app.stories.run(s); break; }
       case 'story-later': if (this.pendingStory) this._dismissed.add(this.pendingStory.id); this.pendingStory = null; break;   // 这次打开不再提示；下次进房间再提醒
       case 'story-reset': app.stories.reset(); this.render(); app.hud.toast('剧情进度已重置'); break;

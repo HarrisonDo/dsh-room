@@ -680,14 +680,14 @@ class App {
    * 和角色说一句话 → { text, acts, note? }。有宿主（ext.chat）走模型，宿主不可用或出错时退回离线台词并在 note 里说明。
    * 回复里的 [[动作]] 标记会被剥掉并执行：wave / dance / sleep / read / goto:家具 / use:家具 / room:房间 / emote:符号
    */
-  async chat(agent, text, history) {
+  async chat(agent, text, history, opts) {
     const a = agent || this.mainAgent();
     if (!a) return { text: '', acts: [] };
     let res = null, note = '';
     if (this.ext.chat) {
       const c = this.characterOf(a);
       try {
-        const r = await this.ext.chat({ agent: { id: a.id, name: a.name }, character: c ? { id: c.id, name: c.name, persona: c.persona || '', scenario: c.scenario || '' } : null, text, history: (history || []).map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', text: m.text })), room: this.describe() });
+        const r = await this.ext.chat({ agent: { id: a.id, name: a.name }, character: c ? { id: c.id, name: c.name, persona: c.persona || '', scenario: c.scenario || '' } : null, text, history: (history || []).map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', text: m.who && m.who !== a.name ? m.who + '：' + m.text : m.text })), group: !!(opts && opts.group), room: this.describe() });
         if (r && r.text) { res = parseActs(r.text); if (Array.isArray(r.acts)) res.acts = res.acts.concat(r.acts); }
         else note = (r && r.error) || '模型没有回话';
       } catch (e) { note = e.message || String(e); }
