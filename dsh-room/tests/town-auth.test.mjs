@@ -155,3 +155,9 @@ test('likes: one per account, can undo, not on yourself; hot sort uses them', as
   assert.equal(town.api.threads({ sort: 'hot' }).threads[0].id, hot);
   assert.ok(town.api.threads({ sort: 'hot' }).threads.some((t) => t.id === quiet));
 });
+
+test('a public deployment never falls back to the prototype identity', () => {
+  assert.equal(authConfig({}).legacy, true);
+  assert.equal(authConfig({ TOWN_PUBLIC_URL: 'https://town.example.com' }).legacy, false);
+  assert.equal(authConfig({ TOWN_PUBLIC_URL: 'https://town.example.com', TOWN_LEGACY: '1' }).legacy, false);
+});

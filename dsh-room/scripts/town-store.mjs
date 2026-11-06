@@ -115,6 +115,8 @@ export async function openStore(file = ':memory:') {
     log: (actor, action, target, detail) => { q('INSERT INTO mod_log (actor, action, target, detail, t) VALUES (?, ?, ?, ?, ?)').run(actor, action, target, JSON.stringify(detail || {}), Date.now()); },
     logs: (n = 50) => q('SELECT * FROM mod_log ORDER BY id DESC LIMIT ?').all(n).map((r) => ({ actor: r.actor, action: r.action, target: r.target, detail: JSON.parse(r.detail || '{}'), t: r.t })),
 
+    /** 在线备份成一个独立的数据库文件（服务不停） */
+    backup: (file) => { db.prepare('VACUUM INTO ?').run(file); },
     close: () => db.close(),
   };
 }

@@ -1,0 +1,47 @@
+# AI 小镇部署：town（Node + SQLite）+ caddy（HTTPS，自动申请证书）。
+# 用法见 deploy/town/README.md。所有密钥写在同目录的 .env 里（不进 Git），这个文件不放任何密钥。
+services:
+  town:
+    build:
+      context: ../..
+      dockerfile: deploy/town/Dockerfile
+    image: dsh-town:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TOWN_HOST: 0.0.0.0
+      TOWN_PORT: 18780
+      TOWN_DB: /data/town.db
+      TOWN_WORDS: /config/words.txt
+    volumes:
+      - ./data:/data                      # 数据库：迁移时整个目录拷走
+      - ./backup:/backup                  # 每日备份
+      - ./words.txt:/config/words.txt:ro  # 敏感词库（把 out.txt 拷成 words.txt）
+    expose:
+      - "18780"                           # 只给 caddy 用，不对外开端口
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  # 每天备份一次，保留 14 天
+  backup:
+    image: dsh-town:latest
+    depends_on: [town]
+    restart: unless-stopped
+    volumes:
+      - ./data:/data:ro
+      - ./backup:/backup
+    entrypoint: ["sh", "-c", "while true; do node town-backup.mjs /data/town.db /backup 14; sleep 86400; done"]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [town]
+    env_file: .env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy-data:/data                # 证书：迁移时一起拷走，免得重新申请
+      - ./caddy-config:/config

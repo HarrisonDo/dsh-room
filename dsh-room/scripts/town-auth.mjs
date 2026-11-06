@@ -9,7 +9,7 @@
  *
  * 服务器只存令牌的 sha256；服务商的 access token 用完即丢，不保存。
  *
- * 环境变量：TOWN_PUBLIC_URL（回调用的公网地址，如 https://town.example.com）
+ * 环境变量：TOWN_PUBLIC_URL（回调用的公网地址，如 https://town.example.com；设了公网地址就不允许原型身份）
  *           GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET
  *           LINUXDO_CLIENT_ID / LINUXDO_CLIENT_SECRET / LINUXDO_MIN_TRUST（最低信任等级，默认 0）
  *           TOWN_DEV_LOGIN=1（只在本机地址下生效：随便填个名字就能登录，测试用）
@@ -48,7 +48,8 @@ export function authConfig(env = process.env) {
   return {
     publicUrl, providers,
     // 没配任何登录方式时，沿用原型的 id + key 身份（只适合本机）
-    legacy: env.TOWN_LEGACY ? env.TOWN_LEGACY === '1' : !Object.keys(providers).length,
+    // 公网地址上永远不开（忘了配登录也不会变成谁都能冒充）
+    legacy: local && (env.TOWN_LEGACY ? env.TOWN_LEGACY === '1' : !Object.keys(providers).length),
     owners: String(env.TOWN_OWNER || '').split(',').map((s) => s.trim()).filter(Boolean),
   };
 }

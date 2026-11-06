@@ -26,6 +26,8 @@ const arg = (k, d) => { const i = process.argv.indexOf(k); return i > 0 ? proces
 const PORT = +(arg('--port', process.env.TOWN_PORT || 18780));
 const DB = arg('--db', process.env.TOWN_DB || '');
 const WORDS = arg('--words', process.env.TOWN_WORDS || '');
+// 默认只监听本机；容器里设 TOWN_HOST=0.0.0.0，由 compose 只把端口暴露给前面的 Caddy
+const HOST = process.env.TOWN_HOST || '127.0.0.1';
 
 export const LIMIT = { body: 400 * 1024, text: 200, title: 40, name: 16, note: 100, recent: 60, threads: 500, threadsPerDay: 10, acts: 2, perMinute: 12, hereMax: 12, reportHide: 3, kickMs: 3600000, characters: 3 };
 const ACT_RE = /^(wave|dance|sleep|read|emote:[a-z]{1,8}|goto:[^:]{1,20}|use:[^:]{1,20})$/;
@@ -382,7 +384,7 @@ const page = (res, code, body) => {
   res.end(body);
 };
 
-export function serve(town, port = PORT) {
+export function serve(town, port = PORT, host = HOST) {
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x');
     const base = 'http://' + (req.headers.host || '127.0.0.1:' + port);
@@ -400,6 +402,7 @@ export function serve(town, port = PORT) {
       } catch (e) { return page(res, e.code || 500, '<meta charset="utf-8"><p style="font:15px system-ui;padding:40px">' + String(e.message).replace(/</g, '&lt;') + '</p>'); }
     }
 
+    if (req.method === 'GET' && url.pathname === '/health') { res.writeHead(200, { 'content-type': 'text/plain' }); return res.end('ok'); }
     const origin = req.headers.origin;
     if (!okOrigin(origin)) { res.writeHead(403); return res.end(); }
     const cors = { 'access-control-allow-origin': origin || '*', 'access-control-allow-headers': 'content-type, authorization', vary: 'origin' };
@@ -429,7 +432,7 @@ export function serve(town, port = PORT) {
       json(e.code || 500, { error: e.code ? e.message : '服务器出错了', labels: e.labels });
     }
   });
-  server.listen(port, '127.0.0.1');
+  server.listen(port, host);
   return server;
 }
 
@@ -439,6 +442,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const auth = authConfig();
   const town = createTown(store, { auth, moderator });
   const how = town.login.providers().map((x) => x.label).join('、') || (auth.legacy ? '未配置，用原型身份' : '无');
-  serve(town).on('listening', () => console.log(`AI 小镇中继：http://127.0.0.1:${PORT}/（只监听本机，${DB ? '数据存到 ' + DB : '数据只在内存里'}；登录：${how}；本地词表：${moderator.size()} 个词；屏蔽词服务：${process.env.MODERATION_URL ? '已配置' : '未配置'}）`));
+  serve(town).on('listening', () => console.log(`AI 小镇中继：http://${HOST}:${PORT}/（${DB ? '数据存到 ' + DB : '数据只在内存里'}；登录：${how}；本地词表：${moderator.size()} 个词；屏蔽词服务：${process.env.MODERATION_URL ? '已配置' : '未配置'}）`));
   for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { store.close(); process.exit(0); });
 }

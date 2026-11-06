@@ -1,0 +1,14 @@
+# 域名来自 .env 的 TOWN_DOMAIN；Caddy 自动申请和续期 HTTPS 证书。
+{$TOWN_DOMAIN} {
+	encode gzip
+	# SSE（/events）要立即转发，不能缓冲
+	reverse_proxy town:18780 {
+		flush_interval -1
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		-Server
+	}
+}

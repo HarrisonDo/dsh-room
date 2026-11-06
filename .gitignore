@@ -21,3 +21,11 @@ out.txt
 # 本地工具与笔记
 export_sensitive_single.py
 py.md
+
+# 部署：密钥、数据、备份、证书、敏感词不进仓库
+deploy/town/.env
+deploy/town/data/
+deploy/town/backup/
+deploy/town/caddy-data/
+deploy/town/caddy-config/
+deploy/town/words.txt
