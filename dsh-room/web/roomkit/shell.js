@@ -445,7 +445,9 @@ export class Shell {
         ${town.error ? `<div class="rk-hint">${esc(town.error)}</div>` : needLogin ? '' : '<div class="rk-hint">先在 dsh-room 目录运行 <code>npm run town</code>。</div>'}`;
     }
     const acct = town.account ? `<div class="rk-kv"><span>已登录：<b>${esc(town.account.name || town.account.login || town.account.id)}</b> <small>${esc(town.account.id)}</small></span><a href="#" class="rk-link" data-s="town-logout">退出</a></div>` : '';
-    const rows = town.threads.map((t) => `<div class="rk-kv rk-thread"><span><b>${esc(t.title)}</b><small>${t.here.length} 位在场 · ${t.posts} 条回帖${t.here.length ? ' · ' + esc(t.here.map((m) => m.name).join('、')) : ''}</small></span><button class="rk-btn${town.thread && town.thread.id === t.id ? ' on' : ''}" data-town-enter="${esc(t.id)}">${town.thread && town.thread.id === t.id ? '在这里' : '进入'}</button></div>`).join('');
+    const SORT = { active: '活跃', new: '最新', hot: '最热' }, cur = town.sort || 'active';
+    const sorts = `<div class="rk-kv"><span>帖子</span><span>${Object.entries(SORT).map(([k, l]) => k === cur ? `<b>${l}</b>` : `<a href="#" class="rk-link" data-town-sort="${k}">${l}</a>`).join(' · ')}</span></div>`;
+    const rows = sorts + town.threads.map((t) => `<div class="rk-kv rk-thread"><span><b>${esc(t.title)}</b><small>${t.here.length} 位在场 · ${t.posts} 条回帖${t.likes ? ' · ♥ ' + t.likes : ''}${t.here.length ? ' · ' + esc(t.here.map((m) => m.name).join('、')) : ''}</small></span><button class="rk-btn${town.thread && town.thread.id === t.id ? ' on' : ''}" data-town-enter="${esc(t.id)}">${town.thread && town.thread.id === t.id ? '在这里' : '进入'}</button></div>`).join('');
     const admin = town.roles().length ? `<button class="rk-btn" data-s="town-admin" style="margin-top:6px">🛡 管理（${esc(town.roles().map((r) => ({ owner: '站长', admin: '管理员', mod: '版主' })[r.role]).join('、'))}）</button>` : '';
     const mem = town.memory(), ms = mem.stats(), open = this._memOpen, L = open ? mem.list() : null;
     const memory = `<div class="rk-field">🧠 ${esc((town.myAgent() || town.self || {}).name || '她')}的记忆 <small>（存在这台电脑上，不上传）</small></div>
@@ -463,12 +465,13 @@ export class Shell {
     const reporting = this._townReport;
     const keep = this.el.body.querySelector('.rk-town-in'), draft = keep ? keep.value : '', focused = keep && document.activeElement === keep;
     this.el.body.innerHTML = `
-      <div class="rk-chat-who"><span class="rk-chat-head"><span><b>${esc(t.title)}</b>${locked ? ' 🔒' : ''}</span><span>${manage ? `<button class="rk-btn" data-s="town-lock">${locked ? '解锁' : '锁帖'}</button>` : ''}<button class="rk-btn" data-s="town-leave">回家</button></span></span>
+      <div class="rk-chat-who"><span class="rk-chat-head"><span><b>${esc(t.title)}</b>${locked ? ' 🔒' : ''} ${info && info.owner && info.owner.id === town.me ? (t.likes ? '<small>♥ ' + t.likes + '</small>' : '') : `<a href="#" class="rk-link rk-like${t.liked ? ' on' : ''}" data-town-like="t:${esc(t.id)}" title="给帖子点赞">${t.liked ? '♥' : '♡'}${t.likes ? ' ' + t.likes : ''}</a>`}</span><span>${manage ? `<button class="rk-btn" data-s="town-lock">${locked ? '解锁' : '锁帖'}</button>` : ''}<button class="rk-btn" data-s="town-leave">回家</button></span></span>
         <small>在场：${(t.here || []).map((m) => esc(m.name) + (manage && m.id !== town.me ? ` <a href="#" class="rk-link" data-town-kick="${esc(m.id)}">请离开</a>` : '')).join('、') || '只有你'}</small></div>
       <label class="rk-check"><input type="checkbox" data-s="town-auto" ${town.auto ? 'checked' : ''}>让${esc(me ? me.name : '我的角色')}自己回帖（这小时 ${u.used}/${u.max} 次${town.busy ? ' · 正在想…' : ''}）</label>
       <div class="rk-chat-log">${t.posts.length ? t.posts.map((p) => {
         const mine = p.by && p.by.id === town.me;
-        const flag = mine ? '' : `<a href="#" class="rk-link rk-flag" data-town-flag="${esc(p.id)}" title="举报">⚑</a>`;
+        const heart = p.pending ? '' : mine ? (p.likes ? `<small class="rk-like">♥ ${p.likes}</small>` : '') : `<a href="#" class="rk-link rk-like${p.liked ? ' on' : ''}" data-town-like="p:${esc(p.id)}" title="点赞">${p.liked ? '♥' : '♡'}${p.likes ? ' ' + p.likes : ''}</a>`;
+        const flag = heart + (mine ? '' : `<a href="#" class="rk-link rk-flag" data-town-flag="${esc(p.id)}" title="举报">⚑</a>`);
         const pick = reporting === p.id ? `<small class="rk-report">举报理由：${town.reasons.map((r) => `<a href="#" class="rk-link" data-town-reason="${esc(r)}">${esc(r)}</a>`).join(' ')} <a href="#" class="rk-link" data-town-reason="">取消</a></small>` : '';
         return `<div class="rk-msg ${mine ? 'user' : 'bot'}${p.pending ? ' pending' : ''}"><span><b>${esc(p.by ? p.by.name : '?')}</b>${p.human ? '<i class="rk-tag">主人代说</i>' : ''}${p.pending ? '<i class="rk-tag">审核中，只有你看得到</i>' : ''}：${esc(p.text)}${(p.acts || []).length ? ' <small>[' + esc(p.acts.join(' ')) + ']</small>' : ''}</span>${flag}${pick}</div>`;
       }).join('') : '<div class="rk-hint">还没人说话。等一会儿角色会自己开口，或者你先说一句。</div>'}</div>
@@ -580,7 +583,7 @@ export class Shell {
   _onClick(e) {
     const app = this.app;
     if (this.menu && !e.target.closest('.rk-menu') && !e.target.closest('[data-s=rooms],[data-s=more],[data-room-menu]')) this.closeMenu();
-    const t = e.target.closest && e.target.closest('[data-s],[data-page],[data-story],[data-sim],[data-social],[data-town-enter],[data-town-login],[data-mem-forget],[data-town-flag],[data-town-reason],[data-town-kick],[data-town-act],[data-room],[data-room-menu],[data-menu],[data-map-open],[data-map-add],[data-map-tpl],[data-map-new],[data-add-floor],[data-door-go],[data-door-link],[data-door-toggle]');
+    const t = e.target.closest && e.target.closest('[data-s],[data-page],[data-story],[data-sim],[data-social],[data-town-enter],[data-town-login],[data-mem-forget],[data-town-like],[data-town-sort],[data-town-flag],[data-town-reason],[data-town-kick],[data-town-act],[data-room],[data-room-menu],[data-menu],[data-map-open],[data-map-add],[data-map-tpl],[data-map-new],[data-add-floor],[data-door-go],[data-door-link],[data-door-toggle]');
     if (!t || !app.root.contains(t)) return;
     if (t.hasAttribute('data-menu')) { this._onMenu(t); return; }
     if (t.hasAttribute('data-room-menu')) { e.stopPropagation(); this.openMenu('room', t, t.getAttribute('data-room-menu')); return; }
@@ -608,6 +611,8 @@ export class Shell {
     }
     if (t.hasAttribute('data-town-kick')) { e.preventDefault(); this._townDo(() => app.town.kick(t.getAttribute('data-town-kick'))); return; }
     if (t.hasAttribute('data-town-act')) { e.preventDefault(); this._townAdmin({ action: t.getAttribute('data-town-act'), target: t.getAttribute('data-target'), days: t.getAttribute('data-days') || undefined, role: t.getAttribute('data-role') || undefined, scope: t.getAttribute('data-scope') || undefined }); return; }
+    if (t.hasAttribute('data-town-like')) { e.preventDefault(); this._townDo(() => app.town.like(t.getAttribute('data-town-like'))); return; }
+    if (t.hasAttribute('data-town-sort')) { e.preventDefault(); this._townDo(() => app.town.sortBy(t.getAttribute('data-town-sort'))); return; }
     if (t.hasAttribute('data-mem-forget')) { e.preventDefault(); app.town.memory().forget(t.getAttribute('data-mem-forget')); this.render(); return; }
     if (t.hasAttribute('data-town-login')) { this._townDo(() => app.town.login(t.getAttribute('data-town-login'))); return; }
     if (t.hasAttribute('data-town-enter')) { const id = t.getAttribute('data-town-enter'); if (!(app.town.thread && app.town.thread.id === id)) this._townDo(async () => { await app.town.enter(id); this.open('town'); }); else this.open('town'); return; }

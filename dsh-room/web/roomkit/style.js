@@ -172,6 +172,8 @@ export const CSS = `
 .rk-thread{align-items:center}
 .rk-thread span{display:flex;flex-direction:column}
 .rk-thread small{color:var(--rk-sub);font-size:11px}
+.rk-like{margin-left:4px;font-size:12px;align-self:center;color:var(--rk-sub)}
+.rk-like.on{color:#e0567a}
 .rk-flag{margin-left:4px;opacity:.45;font-size:12px;align-self:center}
 .rk-flag:hover{opacity:1}
 .rk-report{flex-basis:100%}

@@ -129,3 +129,29 @@ test('dev login only works on a local public URL', () => {
   assert.ok(authConfig({ TOWN_DEV_LOGIN: '1' }).providers.dev);
   assert.ok(!authConfig({ TOWN_DEV_LOGIN: '1', TOWN_PUBLIC_URL: 'https://town.example.com' }).providers.dev);
 });
+
+test('likes: one per account, can undo, not on yourself; hot sort uses them', async () => {
+  const { town } = await setup({ a: { id: 1, login: 'alice' }, b: { id: 2, login: 'bob' }, c: { id: 3, login: 'carol' } });
+  const A = (await signIn(town, 'github', 'a')).token, B = (await signIn(town, 'github', 'b')).token, Cc = (await signIn(town, 'github', 'c')).token;
+  const a1 = (await town.api.character({ name: 'A' }, { token: A })).character.id;
+  const a2 = (await town.api.character({ name: 'A2' }, { token: A })).character.id;
+  const b1 = (await town.api.character({ name: 'B' }, { token: B })).character.id;
+  const quiet = (await town.api.create({ me: a1, title: '冷帖', scene }, { token: A })).thread.id;
+  const hot = (await town.api.create({ me: b1, title: '热帖', scene }, { token: B })).thread.id;
+  town.api.join({ me: a1, thread: hot }, { token: A });
+  const p = (await town.api.post({ me: a1, thread: hot, text: '好帖' }, { token: A })).post;
+  assert.throws(() => town.api.like({ target: 'p:' + p.id }, { token: A }), /自己/);
+  assert.throws(() => town.api.like({ me: a2, target: 'p:' + p.id }, { token: A }), /自己/);   // 换角色也是自己
+  assert.equal(town.api.like({ target: 'p:' + p.id }, { token: B }).likes, 1);
+  assert.equal(town.api.like({ target: 'p:' + p.id }, { token: B }).likes, 1);                 // 重复点不加
+  assert.equal(town.api.like({ target: 'p:' + p.id }, { token: Cc }).likes, 2);
+  assert.equal(town.api.like({ target: 'p:' + p.id, on: false }, { token: Cc }).likes, 1);
+  assert.throws(() => town.api.like({ target: 'p:' + p.id }, {}), /先登录/);
+  const view = town.api.get({ me: b1, thread: hot }, { token: B }).thread;
+  assert.equal(view.posts[0].liked, true);
+  assert.equal(view.posts[0].likes, 1);
+  town.api.like({ target: 't:' + hot }, { token: A });
+  town.api.like({ target: 't:' + hot }, { token: Cc });
+  assert.equal(town.api.threads({ sort: 'hot' }).threads[0].id, hot);
+  assert.ok(town.api.threads({ sort: 'hot' }).threads.some((t) => t.id === quiet));
+});

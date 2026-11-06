@@ -80,6 +80,20 @@ export async function openStore(file = ':memory:') {
     }),
     pendingPosts: () => q('SELECT * FROM posts WHERE hidden = 2 ORDER BY t LIMIT 100').all().map(post),
 
+    /** 点赞 / 取消：每个账号对每条内容一次；返回最新赞数。target = p:回帖 / t:帖子 */
+    like: (target, acc, on) => tx(() => {
+      const [kind, id] = target.split(':'), table = kind === 'p' ? 'posts' : 'threads';
+      const had = !!q('SELECT 1 FROM likes WHERE target = ? AND member = ?').get(target, acc);
+      if (on && !had) { q('INSERT INTO likes (target, member, t) VALUES (?, ?, ?)').run(target, acc, Date.now()); q(`UPDATE ${table} SET likes = likes + 1 WHERE id = ?`).run(id); }
+      if (!on && had) { q('DELETE FROM likes WHERE target = ? AND member = ?').run(target, acc); q(`UPDATE ${table} SET likes = likes - 1 WHERE id = ?`).run(id); }
+      return q(`SELECT likes FROM ${table} WHERE id = ?`).get(id).likes;
+    }),
+    /** 这个账号点过赞的目标（只查给定的这些） */
+    likedBy: (acc, targets) => {
+      if (!acc || !targets.length) return new Set();
+      return new Set(q(`SELECT target FROM likes WHERE member = ? AND target IN (${targets.map(() => '?').join(',')})`).all(acc, ...targets).map((r) => r.target));
+    },
+
     /** 举报：同一人对同一目标只记一次；返回这个目标还没处理的举报人数 */
     report: (r) => {
       q('INSERT INTO reports (id, target, member, reason, note, t) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (target, member) DO NOTHING').run(r.id, r.target, r.member, r.reason, r.note, r.t);

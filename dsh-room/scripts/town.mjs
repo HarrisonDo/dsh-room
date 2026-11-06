@@ -49,7 +49,13 @@ export function createTown(store, opts = {}) {
   const pub = (m) => m && { id: m.id, name: m.name, kind: m.kind, look: m.look };
   const member = (id) => pub(store.member(id));
   const brief = (t) => ({ id: t.id, title: t.title, owner: member(t.owner), posts: t.posts, likes: t.likes || 0, locked: t.locked, here: [...at(t.id)].map(member).filter(Boolean), last: t.last || t.t });
-  const list = () => store.threads().map(brief).sort((a, b) => b.last - a.last);
+  /** 排序：active 最近活跃（赞多的稍微靠前）· new 最新 · hot 最热（赞和回帖，随时间衰减） */
+  const SORTS = {
+    active: (t) => t.last + Math.min(t.likes, 50) * 600000,
+    new: (t) => t.t || 0,
+    hot: (t) => (t.likes * 3 + t.posts) / Math.pow((Date.now() - t.last) / 3600000 + 2, 1.5),
+  };
+  const list = (sort = 'active') => { const f = SORTS[sort] || SORTS.active; return store.threads().map((t) => Object.assign(brief(t), { _k: f(t), t: t.t })).sort((a, b) => b._k - a._k).map(({ _k, ...x }) => x); };
   const send = (ev, data, only) => {
     const line = `event: ${ev}\ndata: ${JSON.stringify(data)}\n\n`;
     for (const c of clients) if (!only || only(c)) c.res.write(line);
@@ -181,12 +187,25 @@ export function createTown(store, opts = {}) {
 
     /* ───────── 帖子 ───────── */
 
-    threads() { return { threads: list() }; },
+    threads(p) { return { threads: list(p && p.sort) }; },
+    /** 点赞只给人点（不给 AI 自动点）：必须带登录身份；不能赞自己 */
+    like(p, ctx) {
+      const { acc } = who(p, ctx);
+      const target = str(p.target, 50), [kind, id] = target.split(':');
+      const obj = kind === 'p' ? store.post(id) : kind === 't' ? store.thread(id) : null;
+      if (!obj || obj.hidden || (kind === 't' && id === 'plaza')) throw err(404, '没有这条内容');
+      if (accOf(kind === 'p' ? obj.by : obj.owner) === acc) throw err(400, '不能给自己点赞');
+      const likes = store.like(target, acc, p.on !== false);
+      if (kind === 'p') send('likes', { thread: obj.thread, post: id, likes }); else send('threads', { threads: list() });
+      return { likes, on: p.on !== false };
+    },
     get(p, ctx) {
       const t = thread(p.thread);
-      let me = '';
-      try { me = auth(p, ctx).id; } catch (e) { /* 没登录也能看公开内容 */ }
-      return { thread: Object.assign(brief(t), { scene: t.scene, sceneRef: t.sceneRef || null, posts: store.posts(t.id, LIMIT.recent, me).map(postOut) }) };
+      let me = '', acc = '';
+      try { const m = auth(p, ctx); me = m.id; acc = m.account; } catch (e) { /* 没登录也能看公开内容 */ }
+      const posts = store.posts(t.id, LIMIT.recent, me);
+      const liked = store.likedBy(acc, posts.map((x) => 'p:' + x.id).concat('t:' + t.id));
+      return { thread: Object.assign(brief(t), { liked: liked.has('t:' + t.id), scene: t.scene, sceneRef: t.sceneRef || null, posts: posts.map((x) => Object.assign(postOut(x), liked.has('p:' + x.id) ? { liked: true } : {})) }) };
     },
     async create(p, ctx) {
       const m = auth(p, ctx);

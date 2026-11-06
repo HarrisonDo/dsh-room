@@ -96,9 +96,10 @@ export class Town {
     }
     const q = new URLSearchParams(this.token ? { token: this.token, me: this.me } : { me: this.me, key: this.key });
     const es = this.es = new EventSource(this.url + '/events?' + q);
-    es.addEventListener('threads', (e) => { this.threads = JSON.parse(e.data).threads; this._changed(); });
+    es.addEventListener('threads', (e) => { if (this.sort && this.sort !== 'active') this.sortBy(this.sort).catch(() => {}); else { this.threads = JSON.parse(e.data).threads; this._changed(); } });
     es.addEventListener('presence', (e) => { const d = JSON.parse(e.data); if (this.thread && d.thread === this.thread.id) { this.thread.here = d.here; this._cast(); this._changed(); } });
     es.addEventListener('post', (e) => { const d = JSON.parse(e.data); if (this.thread && d.thread === this.thread.id) this._onPost(d.post); });
+    es.addEventListener('likes', (e) => { const d = JSON.parse(e.data); const p = this.thread && d.thread === this.thread.id && this.thread.posts.find((x) => x.id === d.post); if (p) { p.likes = d.likes; this._changed(); } });
     es.addEventListener('hidden', (e) => { const d = JSON.parse(e.data); if (this.thread && d.thread === this.thread.id) { this.thread.posts = this.thread.posts.filter((p) => p.id !== d.post); this._changed(); } });
     es.addEventListener('kicked', (e) => { const d = JSON.parse(e.data); if (this.thread && (!d.thread || d.thread === this.thread.id)) { this.app.hud.toast(d.thread ? '你被请出了这个帖子' : '账号已被封禁', 3000); this.leave(); } });
     es.onerror = () => { this.online = es.readyState === 1; this._changed(); };
@@ -153,7 +154,7 @@ export class Town {
     this._autosave = app.opts.autosave;
     app.opts.autosave = false;
     app.visiting = thread.id;
-    this.thread = { id: thread.id, title: thread.title, posts: thread.posts, here: thread.here };
+    this.thread = { id: thread.id, title: thread.title, posts: thread.posts, here: thread.here, liked: thread.liked, likes: thread.likes };
     this.visit = { met: new Set(), from: thread.posts.length };
     await app.shell.curtain(true, '帖子 · ' + thread.title);
     app.openScene(scene, { followers: [] });
@@ -295,6 +296,16 @@ export class Town {
     const t = this.thread, info = t && this.threads.find((x) => x.id === t.id);
     return !!t && ((info && info.owner && info.owner.id === this.me) || this.isStaff() || this.roles().some((r) => r.role === 'mod' && r.scope === t.id));
   }
+  /** 点赞（只有人点，角色不会自己点）：target = p:回帖 / t:帖子 */
+  async like(target) {
+    const t = this.thread, [kind, id] = target.split(':');
+    const obj = kind === 'p' ? t && t.posts.find((x) => x.id === id) : t;
+    const on = !(obj && obj.liked);
+    const r = await this.call('like', { target, on });
+    if (obj) { obj.liked = r.on; obj.likes = r.likes; }
+    this._changed();
+  }
+  async sortBy(sort) { this.sort = sort; this.threads = (await this.call('threads', { sort })).threads; this._changed(); }
   report(target, reason, note) { return this.call('report', { target, reason, note }); }
   lock(on) { return this.call('lock', { thread: this.thread.id, locked: !!on }); }
   kick(member) { return this.call('kick', { thread: this.thread.id, member }); }
