@@ -18,3 +18,6 @@ town.db*
 out.txt
 # 敏感词库：不进公开仓库
 out.txt
+# 本地工具与笔记
+export_sensitive_single.py
+py.md
