@@ -1,0 +1,161 @@
+/* RoomCore 房间内核样式 v0.5 —— 2.5D 实体化场景（相机层 + 双 svg 三明治） */
+:root { --brightness: 1; --ambient: #ffffff; --sun: .3; --lamp: 1; }
+.room { position: relative; aspect-ratio: 3 / 2; isolation: isolate; border-radius: 14px;
+        overflow: hidden; background: #1a2130; }
+
+/* 三明治：壳+低深度家具 ← 角色 ← 高深度家具（都装进相机层，整体缩放平移） */
+.room .room-camera { position: absolute; inset: 0; transform-origin: 0 0; will-change: transform; }
+.room .room-camera.ease { transition: transform .5s cubic-bezier(.22, .9, .34, 1); }
+.room.panning, .room.panning .fz { cursor: grabbing; }
+.room .svg-back, .room .svg-front { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.room .svg-back { z-index: 1; }
+.room .room-pet-slot { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+.room .svg-front { z-index: 3; }
+
+/* 【命中测试铁律】覆盖层一律不拦截点击；可点=.fz（家具命中区）与角色命中盒 */
+.room .svg-back, .room .svg-front { pointer-events: none; }   /* SVG 根会挡住整块区域，必须关掉 */
+.room .layer-shell, .room .color-cast, .room .sunbeam, .room .layer-motes,
+.room .layer-weather, .room .weather-glass, .room .layer-char { pointer-events: none; }
+
+/* 调色：壳与家具统一吃 CSS 变量；hover 用 --fboost 提亮自身 */
+.room .shell-img, .room .furn-img {
+  filter: brightness(calc(var(--brightness) * var(--lamp) * var(--fboost, 1))) saturate(var(--saturation, 1));
+  transition: filter 4s; }
+.room .furn .furn-fx { transition: opacity .5s; }
+.room .furn.hover { --fboost: 1.14; }
+.room .furn.press .furn-img, .room .furn.press .furn-fx {
+  transform: translateY(1.4px); transition: transform .12s ease-out; }
+.room .furn.shake .furn-img, .room .furn.shake .furn-fx { animation: compShake .55s ease-in-out; }
+@keyframes compShake {
+  10% { transform: translateX(-1.6px) rotate(-.4deg); }
+  30% { transform: translateX(1.4px) rotate(.4deg); }
+  50% { transform: translateX(-1px) rotate(-.25deg); }
+  70% { transform: translateX(.8px) rotate(.2deg); }
+  90% { transform: translateX(-.4px); }
+}
+
+/* 环境 */
+.room .color-cast { fill: var(--ambient); opacity: .18; mix-blend-mode: soft-light; transition: fill 4s; }
+.room .sunbeam { mix-blend-mode: screen; transition: opacity 4s; }
+@keyframes roomMote {
+  0%   { transform: translate(0, 0); opacity: 0; }
+  15%  { opacity: .22; }
+  85%  { opacity: .12; }
+  100% { transform: translate(-26px, -60px); opacity: 0; }
+}
+.room .weather-glass { fill: #9db8d8; opacity: .14; transition: opacity 2s; }
+
+/* 家具命中区（占地菱形） */
+.room .fz { fill: transparent; cursor: pointer; transition: fill .3s; pointer-events: auto; }
+.room .fz:hover { fill: rgba(255, 246, 224, .10); }
+.room.arrange .fz { cursor: move; }
+.room.arrange .fz:hover { fill: rgba(120, 200, 255, .18); }
+
+/* 提示名牌（悬停显名，参考 Small Plays） */
+.room-hint { position: absolute; pointer-events: none; padding: 3px 9px; border-radius: 999px;
+             background: rgba(8,14,26,.72); color: #e8eefb; font-size: 12px;
+             opacity: 0; transition: opacity .2s; white-space: nowrap; z-index: 20; }
+
+/* 时钟角标 */
+.room-clock { position: absolute; left: 12px; bottom: 10px; z-index: 21;
+              padding: 3px 10px; border-radius: 999px; background: rgba(8,14,26,.55);
+              color: #cfdcf2; font-size: 11.5px; letter-spacing: .04em;
+              opacity: 0; transition: opacity 1.2s; pointer-events: none; }
+.room-clock.show { opacity: .85; }
+.room:hover .room-clock { opacity: .85; }
+
+/* 角色头顶气泡 */
+.room-say { position: absolute; transform: translate(-50%, -100%); z-index: 23;
+            padding: 5px 11px; border-radius: 12px; background: rgba(240,247,255,.94);
+            color: #1b2436; font-size: 12px; white-space: nowrap; pointer-events: none;
+            opacity: 0; transition: opacity .3s, transform .3s; }
+.room-say.show { opacity: 1; transform: translate(-50%, -110%); }
+.room-say::after { content: ''; position: absolute; left: 50%; bottom: -5px; margin-left: -5px;
+                   border: 5px solid transparent; border-top-color: rgba(240,247,255,.94); border-bottom: 0; }
+
+/* 浮字 */
+.room-floats { position: absolute; inset: 0; z-index: 24; pointer-events: none; overflow: hidden; }
+.room-float { position: absolute; transform: translate(-50%, -100%); padding: 3px 10px;
+              border-radius: 999px; background: rgba(240,247,255,.92); color: #1b2436;
+              font-size: 12px; white-space: nowrap; opacity: 0;
+              animation: roomFloat 1.4s ease-out forwards; }
+@keyframes roomFloat {
+  0%   { opacity: 0; transform: translate(-50%, -90%); }
+  18%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -190%); }
+}
+.room-float.bye { opacity: 0; transition: opacity .5s; }
+
+/* 占位角色 */
+.room .character { transform-box: fill-box; transform-origin: 50% 100%;
+                   animation: roomBreathe 4.2s ease-in-out infinite; }
+@keyframes roomBreathe {
+  0%, 100% { transform: scale(1, 1); }
+  50%      { transform: scale(1.025, .972); }
+}
+
+/* 信息抽屉 + 动线 */
+.room-drawer { position: absolute; width: 260px; display: none; z-index: 25;
+               background: rgba(12,20,36,.93); border: 1px solid rgba(140,180,240,.22);
+               box-shadow: 0 10px 32px rgba(0,0,0,.35);
+               border-radius: 14px; padding: 14px 16px; color: #e8eefb;
+               font: 15px/1.6 "Microsoft YaHei", system-ui, sans-serif; }
+.room-drawer h4 { margin: 0 0 4px; font-size: 15px; }
+.room-drawer .room-drawer-sub { color: #8fa6c8; font-size: 12px; margin-bottom: 10px; }
+.room-drawer .kv { display: flex; justify-content: space-between; gap: 12px;
+                   font-size: 13px; padding: 3px 0; color: #cfdcf2; }
+.room-drawer .line { font-size: 13px; padding: 3px 0; color: #cfdcf2; }
+.room-drawer .room-drawer-x { position: absolute; right: 10px; top: 8px; cursor: pointer;
+                              color: #8fa6c8; font-size: 16px; }
+.room-drawer-links { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.room-drawer-links .link { font-size: 12px; color: #9cc3ff; cursor: pointer;
+                           border: 1px solid rgba(156,195,255,.35); border-radius: 999px;
+                           padding: 2px 10px; transition: background .2s; }
+.room-drawer-links .link:hover { background: rgba(156,195,255,.15); }
+
+/* 布置模式工具条 */
+.room-arrangebar { position: absolute; left: 12px; bottom: 40px; display: none; gap: 6px; z-index: 30;
+                   align-items: center; flex-wrap: nowrap; max-width: calc(100% - 24px); }
+.room-arrangebar button { background: rgba(47,111,208,.55); color: #fff; border: 1px solid rgba(113,175,252,.5);
+                          border-radius: 10px; padding: 4px 10px; font-size: 12px; cursor: pointer;
+                          white-space: nowrap; flex: 0 0 auto; }
+.room-arrangebar .arrange-tip { display: none; }
+
+/* 家具库（布置模式才出现） */
+.room-lib { position: absolute; right: 10px; top: 10px; bottom: 96px; width: 138px; z-index: 31;
+            display: none; flex-direction: column; gap: 6px; padding: 10px;
+            background: rgba(10,16,30,.88); border: 1px solid rgba(140,180,240,.22);
+            border-radius: 14px; color: #e8eefb;
+            font: 12px/1.4 "Microsoft YaHei", system-ui, sans-serif; }
+.room.arrange .room-lib { display: flex; }
+.room-lib-title { color: #9fb4d8; font-size: 12px; letter-spacing: .04em; flex: 0 0 auto; }
+.room-lib-tip { color: #64759a; font-size: 11px; }
+.room-lib-items { overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.room-lib-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 7px;
+                 background: rgba(47,111,208,.18); color: #dfe9fb; border: 1px solid rgba(113,175,252,.25);
+                 border-radius: 10px; cursor: pointer; font: inherit; text-align: left; }
+.room-lib-item:hover { background: rgba(96,158,247,.3); }
+.room-lib-item img { width: 42px; height: 34px; object-fit: contain; flex: 0 0 auto; }
+.room-lib-item span { flex: 1; font-size: 12px; }
+
+/* 删除角标：只在布置模式出现 */
+.room .furn-del { display: none; pointer-events: none; }
+.room.arrange .furn-del { display: block; pointer-events: auto; cursor: pointer; }
+@keyframes furnAppear { from { opacity: 0; } to { opacity: 1; } }
+.room .furn.bump { animation: furnAppear .45s ease-out; }
+
+/* UI 部件层 */
+.room-widgets { position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column;
+                gap: 8px; z-index: 22; max-width: 40%; pointer-events: none; }
+.room-widget { pointer-events: auto; background: rgba(12,20,36,.82); border: 1px solid rgba(113,175,252,.25);
+               border-radius: 12px; padding: 10px 12px; color: #e8eefb; font-size: 12.5px;
+               font-family: "Microsoft YaHei", system-ui, sans-serif; }
+.room-widget .w-title { color: #8fa6c8; font-size: 11px; margin-bottom: 4px; letter-spacing: .05em; }
+.room-widget button { background: rgba(47,111,208,.25); color: #cfe2ff; border: 1px solid rgba(113,175,252,.35);
+                      border-radius: 10px; padding: 3px 9px; font-size: 12px; cursor: pointer; margin: 2px; }
+.room-widget button.on { background: rgba(113,175,252,.45); color: #fff; }
+
+/* 场景切换淡入淡出 */
+.room-fade { position: absolute; inset: 0; background: #0b101c; opacity: 0;
+             pointer-events: none; transition: opacity .4s; z-index: 40; }
+.room-fade.on { opacity: 1; }

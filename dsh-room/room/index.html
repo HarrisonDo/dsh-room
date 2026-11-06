@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>大肥鱼的房间</title>
+<link rel="stylesheet" href="core/room-core.css">
+<style>
+  :root { --dock-w: 620px; }
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+         background: radial-gradient(1200px 700px at 50% 20%, #17203a, #0b101c 70%);
+         color: #e8eefb; font: 15px/1.6 "Microsoft YaHei", system-ui, sans-serif; }
+  .stage { width: min(1100px, 96vw); }
+  .stage-tip { text-align: center; color: #6d7f9f; font-size: 12px; margin-top: 14px; }
+
+  /* 导演模式：藏在左下角的小齿轮，平时几乎看不见 */
+  .director-gear { position: fixed; left: 10px; bottom: 10px; z-index: 50; opacity: .14;
+                   background: none; border: none; color: #8fa6c8; font-size: 17px; cursor: pointer;
+                   transition: opacity .3s; }
+  .director-gear:hover { opacity: .9; }
+  .director-bar { display: none; gap: 8px; flex-wrap: wrap; margin: 12px auto 0; width: fit-content; }
+  .director-bar.open { display: flex; }
+  .director-bar button { background: rgba(47,111,208,.22); color: #cfe2ff; border: 1px solid rgba(113,175,252,.35);
+                         border-radius: 16px; padding: 6px 13px; font-size: 13px; cursor: pointer; font-family: inherit; }
+  .director-bar button.on { background: rgba(113,175,252,.42); color: #fff; }
+
+  /* ── 右下角常驻模式（?dock=1）：web 挂件 / 桌面右下角 / 嵌入 DSH 都用它 ── */
+  body.dock-mode { display: block; background: transparent; }
+  body.dock-mode .stage { position: fixed; right: 16px; bottom: 16px; width: var(--dock-w);
+                          max-width: calc(100vw - 24px); z-index: 40;
+                          filter: drop-shadow(0 18px 50px rgba(0,0,0,.45)); }
+  body.dock-mode .stage-tip { display: none; }
+  body.dock-mode .director-bar { position: fixed; right: 16px; bottom: calc(var(--dock-h, 0px) + 22px);
+                                 margin: 0; width: auto; max-width: calc(100vw - 32px); }
+  .dock-tools { display: none; }
+  body.dock-mode .dock-tools { display: flex; gap: 6px; position: fixed; left: 16px; bottom: 16px; z-index: 45; }
+  .dock-tools button, .dock-pill { background: rgba(12,20,36,.88); color: #cfe2ff;
+                                   border: 1px solid rgba(140,180,240,.3); border-radius: 999px;
+                                   padding: 6px 12px; font: 12px/1 "Microsoft YaHei", system-ui, sans-serif;
+                                   cursor: pointer; backdrop-filter: blur(8px); }
+  .dock-tools button.on { background: rgba(113,175,252,.45); color: #fff; }
+  .dock-pill { position: fixed; right: 16px; bottom: 16px; z-index: 45; display: none;
+               align-items: center; gap: 8px; padding: 9px 14px; font-size: 13px; }
+  body.dock-collapsed .stage { display: none; }
+  body.dock-collapsed .dock-pill { display: flex; }
+  .dock-pill img { width: 22px; height: 22px; }
+</style>
+</head>
+<body>
+<div class="stage" id="stage">
+  <div class="art" id="art"></div>
+  <div class="director-bar" id="director">
+    <span id="d-packs" style="display:contents"></span>
+    <span id="d-scenes" style="display:contents"></span>
+    <button data-period="dawn">清晨</button>
+    <button data-period="noon">中午</button>
+    <button data-period="afternoon">下午</button>
+    <button data-period="night">晚间</button>
+    <button id="d-auto" class="on">跟随时间</button>
+    <button data-weather="clear">晴</button>
+    <button data-weather="rain">雨</button>
+    <button data-weather="snow">雪</button>
+    <button id="d-calib">布置模式</button>
+    <button id="d-sound">声音</button>
+  </div>
+  <p class="stage-tip">滚轮缩放 · 拖拽平移 · 双击复位 · 点击家具有反馈 · ⚙ 导演模式：布置模式可换家具/换场景/换天气</p>
+</div>
+
+<button class="director-gear" id="gear" title="导演模式（D 键）">⚙</button>
+
+<!-- 右下角模式工具栏：尺寸 S/M/L + 收起 -->
+<div class="dock-tools" id="dockTools">
+  <button data-size="420">小</button>
+  <button data-size="620">中</button>
+  <button data-size="860">大</button>
+  <button data-act="collapse">收起</button>
+</div>
+<button class="dock-pill" id="dockPill">🐋 大肥鱼的房间</button>
+
+<!-- 内核 → 真模型 bundle → 房间包 → 插件 → 启动 -->
+<script src="core/room-core.js"></script>
+<script src="vendor/whale-kit.js"></script>
+<script src="packs/default/pack.js"></script>
+<script src="packs/living/pack.js"></script>
+<script src="plugins/whale-resident.js"></script>
+<script src="plugins/demo.js"></script>
+<script>
+  var qs = new URLSearchParams(location.search);
+  var room = RoomCore.create(document.getElementById('art'), {
+    calib: qs.get('calib') === '1',
+    ambient: qs.get('ambient') !== '0'   /* ?ambient=0 关掉天气自变 */
+  });
+  (window.RoomPlugins || []).forEach(function (def) { room.use(def); });
+  room.boot();
+  window.room = room;
+
+  /* ── 右下角常驻模式：?dock=1（尺寸记忆在 localStorage） ── */
+  var DOCK_KEY = 'room.dock';
+  var dock = { on: qs.get('dock') === '1', w: parseInt(qs.get('w'), 10) || 620, collapsed: false };
+  try {
+    var savedDock = JSON.parse(localStorage.getItem(DOCK_KEY) || 'null');
+    if (savedDock && dock.on !== true) { dock.w = savedDock.w || dock.w; dock.collapsed = !!savedDock.collapsed; }
+  } catch (e) {}
+  function applyDock() {
+    document.documentElement.style.setProperty('--dock-w', dock.w + 'px');
+    document.body.classList.toggle('dock-mode', dock.on);
+    document.body.classList.toggle('dock-collapsed', dock.on && dock.collapsed);
+    document.querySelectorAll('#dockTools [data-size]').forEach(function (b) {
+      b.classList.toggle('on', parseInt(b.dataset.size, 10) === dock.w);
+    });
+    localStorage.setItem(DOCK_KEY, JSON.stringify({ w: dock.w, collapsed: dock.collapsed }));
+  }
+  document.getElementById('dockTools').addEventListener('click', function (e) {
+    var t = e.target;
+    if (t.dataset.size) { dock.w = parseInt(t.dataset.size, 10); dock.on = true; dock.collapsed = false; applyDock(); }
+    else if (t.dataset.act === 'collapse') { dock.collapsed = true; applyDock(); }
+  });
+  document.getElementById('dockPill').onclick = function () { dock.collapsed = false; applyDock(); };
+  applyDock();
+
+  /* ── 导演模式：?director=1 / 点齿轮 / 按 D ── */
+  var bar = document.getElementById('director');
+  function toggleDirector(force) {
+    var open = typeof force === 'boolean' ? force : !bar.classList.contains('open');
+    bar.classList.toggle('open', open);
+  }
+  document.getElementById('gear').onclick = function () { toggleDirector(); };
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'd' || e.key === 'D') toggleDirector();
+  });
+  if (qs.get('director') === '1') toggleDirector(true);
+
+  function syncPeriodButtons() {
+    bar.querySelectorAll('[data-period]').forEach(function (b) {
+      b.classList.toggle('on', room.state.manualPeriod === b.dataset.period);
+    });
+    document.getElementById('d-auto').classList.toggle('on', room.state.auto);
+  }
+  bar.addEventListener('click', function (e) {
+    var t = e.target;
+    if (t.dataset.period) room.setPeriod(t.dataset.period);
+    else if (t.dataset.weather) room.setWeather(t.dataset.weather);
+    syncPeriodButtons();
+  });
+  document.getElementById('d-auto').onclick = function () { room.setPeriod(null); syncPeriodButtons(); };
+  document.getElementById('d-calib').onclick = function () {
+    room.enterArrange(!room.state.arrange);
+    this.classList.toggle('on', room.state.arrange);
+  };
+  var soundBtn = document.getElementById('d-sound');
+  soundBtn.classList.toggle('on', room.soundOn());
+  soundBtn.onclick = function () {
+    room.setSound(!room.soundOn());
+    this.classList.toggle('on', room.soundOn());
+  };
+
+  /* 房间包切换（多房间包：packs/<id>/ 即插即用） */
+  function renderPacks() {
+    var box = document.getElementById('d-packs');
+    box.innerHTML = '';
+    room.packs().forEach(function (p) {
+      var b = document.createElement('button');
+      b.textContent = p.name;
+      b.classList.toggle('on', p.id === room.packId());
+      b.onclick = function () {
+        if (room.setPack(p.id)) { renderPacks(); renderScenes(); }
+      };
+      box.appendChild(b);
+    });
+  }
+
+  /* 场景切换（导演模式里） */
+  var sceneBtns = {};
+  function renderScenes() {
+    var box = document.getElementById('d-scenes');
+    box.innerHTML = '';
+    sceneBtns = {};
+    room.scenes().forEach(function (s) {
+      var b = document.createElement('button');
+      b.textContent = s.name;
+      b.onclick = function () { room.switchScene(s.id); syncScenes(); };
+      box.appendChild(b);
+      sceneBtns[s.id] = b;
+    });
+    syncScenes();
+  }
+  renderPacks();
+  renderScenes();
+  function syncScenes() {
+    Object.keys(sceneBtns).forEach(function (id) {
+      sceneBtns[id].classList.toggle('on', id === room.sceneId());
+    });
+  }
+</script>
+</body>
+</html>

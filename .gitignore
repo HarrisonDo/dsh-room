@@ -1,0 +1,16 @@
+node_modules/
+.DS_Store
+.zwork/
+.env
+.env.*
+*.log
+artifacts/
+test-results/
+.claude/cache/
+.claude/settings.local.json
+.claude/hooks/__pycache__/
+
+# 本地参考资料与 Claude Code 配置，不进公开仓库
+参考/
+.claude/
+CLAUDE.md

@@ -1,0 +1,5 @@
+# dsh-room 的 bundle patch —— 把房间插件挂进 DSH 配置树
+# 注意：插件行（id: 那一行）绝不能写行尾注释，商城预检正则会抓不到 entry ID（见 docs/01）。
+- insert:
+    - id: dsh-room
+      name: 'dsh-room'

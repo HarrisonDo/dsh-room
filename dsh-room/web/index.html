@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>大肥鱼的房间 · RoomKit</title>
+<link rel="icon" href="data:,">
+<style>
+  html, body { margin: 0; height: 100%; background: #0f1524; }
+  #room { position: fixed; inset: 0; }
+  /* 右下角常驻挂件：?dock=1&w=620 */
+  body.dock, html.desk, html.desk body { background: transparent; }
+  /* 桌面模式 ?desk=1：透明窗口里只剩房间和角色 */
+  html.desk .rk-boot { display: none; }
+  body.dock #room { inset: auto 16px 16px auto; width: var(--dock-w, 620px); height: calc(var(--dock-w, 620px) * 0.68);
+                    max-width: calc(100vw - 24px); border-radius: 16px; overflow: hidden; box-shadow: 0 18px 50px rgba(0,0,0,.35); }
+  .rk-boot { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; color: #9fb0d0;
+             font: 14px/1.6 system-ui, "PingFang SC", "Microsoft YaHei", sans-serif; }
+</style>
+</head>
+<body>
+<div id="room"><div class="rk-boot">房间加载中…</div></div>
+<!-- 经典脚本：HTTP 与 file:// 双击打开使用同一份构建产物。 -->
+<script src="dist/roomkit.js"></script>
+<!-- 可选：真模型鲸鱼娘（AGPL-3.0，见 room/vendor/coopanion/LICENSE）；删掉这一行就用引擎内置的 Q 版角色 -->
+<script src="vendor/whale-rig.js"></script>
+<script src="packs/default/pack.js"></script>
+<script src="dist/launch.js"></script>
+<script nomodule>document.querySelector('.rk-boot').textContent = '请用 Chrome / Edge / Firefox / Safari 的新版本打开';</script>
+</body>
+</html>
