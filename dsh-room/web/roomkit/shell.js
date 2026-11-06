@@ -438,12 +438,16 @@ export class Shell {
     if (!town) return '';
     const head = '<div class="rk-field">AI 小镇（本机原型）</div><div class="rk-hint" style="margin-top:0">一个帖子就是一个场景。角色进帖子后会自己回帖、在场景里做出反应；你也可以用角色的身份说话。</div>';
     if (!town.online) {
-      return head + `<div class="rk-chat-bar"><input class="rk-town-url" type="text" value="${esc(town.url)}"><button class="rk-btn on" data-s="town-connect">连接</button></div>
-        ${town.error ? `<div class="rk-hint">${esc(town.error)}</div>` : '<div class="rk-hint">先在 dsh-room 目录运行 <code>npm run town</code>，小镇只在本机运行。</div>'}`;
+      const needLogin = town.cfg && !town.cfg.legacy && !town.token;
+      const login = needLogin ? `<div class="rk-field">登录小镇</div>${town.cfg.providers.length ? town.cfg.providers.map((p) => `<button class="rk-btn on" data-town-login="${esc(p.id)}">用 ${esc(p.label)} 登录</button> `).join('') : '<div class="rk-hint">这个小镇还没开放登录。</div>'}
+        <div class="rk-hint">${town.loggingIn ? '在弹出的窗口里完成授权…' : '登录后，你房间里的主角就是你在小镇上的角色。'}</div>` : '';
+      return head + `<div class="rk-chat-bar"><input class="rk-town-url" type="text" value="${esc(town.url)}"><button class="rk-btn${needLogin ? '' : ' on'}" data-s="town-connect">连接</button></div>${login}
+        ${town.error ? `<div class="rk-hint">${esc(town.error)}</div>` : needLogin ? '' : '<div class="rk-hint">先在 dsh-room 目录运行 <code>npm run town</code>。</div>'}`;
     }
+    const acct = town.account ? `<div class="rk-kv"><span>已登录：<b>${esc(town.account.name || town.account.login || town.account.id)}</b> <small>${esc(town.account.id)}</small></span><a href="#" class="rk-link" data-s="town-logout">退出</a></div>` : '';
     const rows = town.threads.map((t) => `<div class="rk-kv rk-thread"><span><b>${esc(t.title)}</b><small>${t.here.length} 位在场 · ${t.posts} 条回帖${t.here.length ? ' · ' + esc(t.here.map((m) => m.name).join('、')) : ''}</small></span><button class="rk-btn${town.thread && town.thread.id === t.id ? ' on' : ''}" data-town-enter="${esc(t.id)}">${town.thread && town.thread.id === t.id ? '在这里' : '进入'}</button></div>`).join('');
     const admin = town.roles().length ? `<button class="rk-btn" data-s="town-admin" style="margin-top:6px">🛡 管理（${esc(town.roles().map((r) => ({ owner: '站长', admin: '管理员', mod: '版主' })[r.role]).join('、'))}）</button>` : '';
-    return head + rows + admin + `<div class="rk-chat-bar" style="margin-top:8px"><input class="rk-town-title" type="text" maxlength="40" placeholder="新帖标题（用当前房间当场景）"><button class="rk-btn" data-s="town-new">开帖</button></div>`;
+    return head + acct + rows + admin + `<div class="rk-chat-bar" style="margin-top:8px"><input class="rk-town-title" type="text" maxlength="40" placeholder="新帖标题（用当前房间当场景）"><button class="rk-btn" data-s="town-new">开帖</button></div>`;
   }
 
   /** 帖子页：回帖记录 = 场景里发生的对话；输入框以我的角色身份发言 */
@@ -572,7 +576,7 @@ export class Shell {
   _onClick(e) {
     const app = this.app;
     if (this.menu && !e.target.closest('.rk-menu') && !e.target.closest('[data-s=rooms],[data-s=more],[data-room-menu]')) this.closeMenu();
-    const t = e.target.closest && e.target.closest('[data-s],[data-page],[data-story],[data-sim],[data-social],[data-town-enter],[data-town-flag],[data-town-reason],[data-town-kick],[data-town-act],[data-room],[data-room-menu],[data-menu],[data-map-open],[data-map-add],[data-map-tpl],[data-map-new],[data-add-floor],[data-door-go],[data-door-link],[data-door-toggle]');
+    const t = e.target.closest && e.target.closest('[data-s],[data-page],[data-story],[data-sim],[data-social],[data-town-enter],[data-town-login],[data-town-flag],[data-town-reason],[data-town-kick],[data-town-act],[data-room],[data-room-menu],[data-menu],[data-map-open],[data-map-add],[data-map-tpl],[data-map-new],[data-add-floor],[data-door-go],[data-door-link],[data-door-toggle]');
     if (!t || !app.root.contains(t)) return;
     if (t.hasAttribute('data-menu')) { this._onMenu(t); return; }
     if (t.hasAttribute('data-room-menu')) { e.stopPropagation(); this.openMenu('room', t, t.getAttribute('data-room-menu')); return; }
@@ -600,6 +604,7 @@ export class Shell {
     }
     if (t.hasAttribute('data-town-kick')) { e.preventDefault(); this._townDo(() => app.town.kick(t.getAttribute('data-town-kick'))); return; }
     if (t.hasAttribute('data-town-act')) { e.preventDefault(); this._townAdmin({ action: t.getAttribute('data-town-act'), target: t.getAttribute('data-target'), days: t.getAttribute('data-days') || undefined, role: t.getAttribute('data-role') || undefined, scope: t.getAttribute('data-scope') || undefined }); return; }
+    if (t.hasAttribute('data-town-login')) { this._townDo(() => app.town.login(t.getAttribute('data-town-login'))); return; }
     if (t.hasAttribute('data-town-enter')) { const id = t.getAttribute('data-town-enter'); if (!(app.town.thread && app.town.thread.id === id)) this._townDo(async () => { await app.town.enter(id); this.open('town'); }); else this.open('town'); return; }
     if (t.hasAttribute('data-sim')) { const v = t.getAttribute('data-sim'); app.setWorkStatus(v ? { state: v, task: v === 'working' ? '模拟任务：整理房间' : null } : null); this._diagAt = 0; return; }
     if (t.hasAttribute('data-social')) { const it = ((app.ext && app.ext.social) || []).find((x) => x.id === t.getAttribute('data-social')); if (it) { it.toggle(); setTimeout(() => { if (this.page === 'social') this.render(); }, 50); } return; }
@@ -634,6 +639,7 @@ export class Shell {
       case 'town-new': { const i = this.el.body.querySelector('.rk-town-title'); this._townDo(async () => { await app.town.create(i && i.value.trim()); this.open('town'); }); return; }
       case 'town-leave': this._townDo(async () => { await app.town.leave(); this.open('social'); }); return;
       case 'town-say': this._townSay(); return;
+      case 'town-logout': e.preventDefault(); this._townDo(() => app.town.logout()); return;
       case 'town-admin': this.page === 'town-admin' ? this._renderTownAdmin() : this.open('town-admin'); return;
       case 'town-lock': { const info = app.town.threads.find((x) => app.town.thread && x.id === app.town.thread.id); this._townDo(() => app.town.lock(!(info && info.locked))); return; }
       case 'town-grant': { const v = (c) => (this.el.body.querySelector(c) || {}).value || ''; this._townAdmin({ action: 'grant', target: 'm:' + v('.rk-admin-who').trim(), role: v('.rk-admin-role'), scope: v('.rk-admin-scope').trim() }); return; }

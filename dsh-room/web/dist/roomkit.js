@@ -5437,12 +5437,16 @@ var RoomKit = (() => {
       if (!town) return "";
       const head = '<div class="rk-field">AI 小镇（本机原型）</div><div class="rk-hint" style="margin-top:0">一个帖子就是一个场景。角色进帖子后会自己回帖、在场景里做出反应；你也可以用角色的身份说话。</div>';
       if (!town.online) {
-        return head + `<div class="rk-chat-bar"><input class="rk-town-url" type="text" value="${esc(town.url)}"><button class="rk-btn on" data-s="town-connect">连接</button></div>
-        ${town.error ? `<div class="rk-hint">${esc(town.error)}</div>` : '<div class="rk-hint">先在 dsh-room 目录运行 <code>npm run town</code>，小镇只在本机运行。</div>'}`;
+        const needLogin = town.cfg && !town.cfg.legacy && !town.token;
+        const login = needLogin ? `<div class="rk-field">登录小镇</div>${town.cfg.providers.length ? town.cfg.providers.map((p) => `<button class="rk-btn on" data-town-login="${esc(p.id)}">用 ${esc(p.label)} 登录</button> `).join("") : '<div class="rk-hint">这个小镇还没开放登录。</div>'}
+        <div class="rk-hint">${town.loggingIn ? "在弹出的窗口里完成授权…" : "登录后，你房间里的主角就是你在小镇上的角色。"}</div>` : "";
+        return head + `<div class="rk-chat-bar"><input class="rk-town-url" type="text" value="${esc(town.url)}"><button class="rk-btn${needLogin ? "" : " on"}" data-s="town-connect">连接</button></div>${login}
+        ${town.error ? `<div class="rk-hint">${esc(town.error)}</div>` : needLogin ? "" : '<div class="rk-hint">先在 dsh-room 目录运行 <code>npm run town</code>。</div>'}`;
       }
+      const acct = town.account ? `<div class="rk-kv"><span>已登录：<b>${esc(town.account.name || town.account.login || town.account.id)}</b> <small>${esc(town.account.id)}</small></span><a href="#" class="rk-link" data-s="town-logout">退出</a></div>` : "";
       const rows = town.threads.map((t) => `<div class="rk-kv rk-thread"><span><b>${esc(t.title)}</b><small>${t.here.length} 位在场 · ${t.posts} 条回帖${t.here.length ? " · " + esc(t.here.map((m) => m.name).join("、")) : ""}</small></span><button class="rk-btn${town.thread && town.thread.id === t.id ? " on" : ""}" data-town-enter="${esc(t.id)}">${town.thread && town.thread.id === t.id ? "在这里" : "进入"}</button></div>`).join("");
       const admin = town.roles().length ? `<button class="rk-btn" data-s="town-admin" style="margin-top:6px">🛡 管理（${esc(town.roles().map((r) => ({ owner: "站长", admin: "管理员", mod: "版主" })[r.role]).join("、"))}）</button>` : "";
-      return head + rows + admin + `<div class="rk-chat-bar" style="margin-top:8px"><input class="rk-town-title" type="text" maxlength="40" placeholder="新帖标题（用当前房间当场景）"><button class="rk-btn" data-s="town-new">开帖</button></div>`;
+      return head + acct + rows + admin + `<div class="rk-chat-bar" style="margin-top:8px"><input class="rk-town-title" type="text" maxlength="40" placeholder="新帖标题（用当前房间当场景）"><button class="rk-btn" data-s="town-new">开帖</button></div>`;
     }
     /** 帖子页：回帖记录 = 场景里发生的对话；输入框以我的角色身份发言 */
     _renderTown() {
@@ -5585,7 +5589,7 @@ var RoomKit = (() => {
     _onClick(e) {
       const app = this.app;
       if (this.menu && !e.target.closest(".rk-menu") && !e.target.closest("[data-s=rooms],[data-s=more],[data-room-menu]")) this.closeMenu();
-      const t = e.target.closest && e.target.closest("[data-s],[data-page],[data-story],[data-sim],[data-social],[data-town-enter],[data-town-flag],[data-town-reason],[data-town-kick],[data-town-act],[data-room],[data-room-menu],[data-menu],[data-map-open],[data-map-add],[data-map-tpl],[data-map-new],[data-add-floor],[data-door-go],[data-door-link],[data-door-toggle]");
+      const t = e.target.closest && e.target.closest("[data-s],[data-page],[data-story],[data-sim],[data-social],[data-town-enter],[data-town-login],[data-town-flag],[data-town-reason],[data-town-kick],[data-town-act],[data-room],[data-room-menu],[data-menu],[data-map-open],[data-map-add],[data-map-tpl],[data-map-new],[data-add-floor],[data-door-go],[data-door-link],[data-door-toggle]");
       if (!t || !app.root.contains(t)) return;
       if (t.hasAttribute("data-menu")) {
         this._onMenu(t);
@@ -5645,6 +5649,10 @@ var RoomKit = (() => {
       if (t.hasAttribute("data-town-act")) {
         e.preventDefault();
         this._townAdmin({ action: t.getAttribute("data-town-act"), target: t.getAttribute("data-target"), days: t.getAttribute("data-days") || void 0, role: t.getAttribute("data-role") || void 0, scope: t.getAttribute("data-scope") || void 0 });
+        return;
+      }
+      if (t.hasAttribute("data-town-login")) {
+        this._townDo(() => app.town.login(t.getAttribute("data-town-login")));
         return;
       }
       if (t.hasAttribute("data-town-enter")) {
@@ -5765,6 +5773,10 @@ var RoomKit = (() => {
           return;
         case "town-say":
           this._townSay();
+          return;
+        case "town-logout":
+          e.preventDefault();
+          this._townDo(() => app.town.logout());
           return;
         case "town-admin":
           this.page === "town-admin" ? this._renderTownAdmin() : this.open("town-admin");
@@ -8769,20 +8781,28 @@ var RoomKit = (() => {
       this.app = app;
       const p = load();
       this.url = p.url || "http://127.0.0.1:18780";
-      this.me = p.me || uid("m").replace(/[^a-z0-9_-]/gi, "");
+      this.token = p.token || "";
+      this.char = p.char || "";
+      this.legacyId = p.me || uid("m").replace(/[^a-z0-9_-]/gi, "");
       this.key = p.key || Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
       this.auto = p.auto !== false;
       this.stamps = (p.stamps || []).filter((t) => Date.now() - t < 36e5);
       this.online = false;
       this.error = "";
+      this.cfg = null;
+      this.account = null;
       this.threads = [];
       this.thread = null;
       this.busy = false;
       this._save();
     }
+    /** 我的角色 id：登录模式用服务器分配的，原型模式用本机生成的 */
+    get me() {
+      return this.cfg && !this.cfg.legacy ? this.char : this.legacyId;
+    }
     _save() {
       try {
-        localStorage.setItem(PREF, JSON.stringify({ url: this.url, me: this.me, key: this.key, auto: this.auto, stamps: this.stamps }));
+        localStorage.setItem(PREF, JSON.stringify({ url: this.url, token: this.token, char: this.char, me: this.legacyId, key: this.key, auto: this.auto, stamps: this.stamps }));
       } catch (e) {
       }
     }
@@ -8791,8 +8811,14 @@ var RoomKit = (() => {
       if (s && (s.page === "social" || s.page === "town")) s.render();
     }
     async call(ep, body) {
-      const r = await fetch(this.url + "/api/" + ep, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(Object.assign({ me: this.me, key: this.key }, body)) });
+      const headers = { "content-type": "application/json" };
+      if (this.token) headers.authorization = "Bearer " + this.token;
+      const r = await fetch(this.url + "/api/" + ep, { method: "POST", headers, body: JSON.stringify(Object.assign({ me: this.me, key: this.key }, body)) });
       const d = await r.json().catch(() => ({}));
+      if (r.status === 401 && this.token) {
+        this.token = "";
+        this._save();
+      }
       if (!r.ok) throw new Error(d.error || "HTTP " + r.status);
       return d;
     }
@@ -8801,17 +8827,42 @@ var RoomKit = (() => {
       const a = this.app.mainAgent(), d = a && a.data || {};
       return { a, name: a && a.name || "大肥鱼", kind: d.kind || "girl", look: d.look || {}, character: d.character || null };
     }
+    /** 连接：先问小镇要不要登录；要登录但还没有令牌时停在“请登录”，等 login() */
     async connect(url) {
-      if (url) this.url = String(url).replace(/\/+$/, "");
+      if (url) {
+        const next = String(url).replace(/\/+$/, "");
+        if (next !== this.url) {
+          this.token = "";
+          this.char = "";
+        }
+        this.url = next;
+      }
       this._save();
       this.disconnect();
-      const s = this._self();
-      this.self = s;
+      const s = this.self = this._self();
       try {
-        const r = await this.call("hello", { name: s.name, kind: s.kind, look: s.look });
-        this.threads = r.threads;
-        this.meInfo = r.me;
-        this.reasons = r.reasons || [];
+        this.cfg = await this.call("config", {});
+        this.reasons = this.cfg.reasons || [];
+        if (this.cfg.legacy) {
+          const r = await this.call("hello", { name: s.name, kind: s.kind, look: s.look });
+          this.threads = r.threads;
+          this.meInfo = r.me;
+          this.account = null;
+        } else {
+          if (!this.token) {
+            this.error = "";
+            this._changed();
+            return false;
+          }
+          const r = await this.call("me", {});
+          const known = r.characters.find((c2) => c2.id === this.char);
+          const c = (await this.call("character", { me: known ? this.char : "", name: s.name, kind: s.kind, look: s.look })).character;
+          this.char = c.id;
+          this._save();
+          this.account = r.account;
+          this.threads = r.threads;
+          this.meInfo = { id: c.id, roles: r.roles, ban: r.ban };
+        }
         this.online = true;
         this.error = "";
       } catch (e) {
@@ -8820,7 +8871,8 @@ var RoomKit = (() => {
         this._changed();
         return false;
       }
-      const es = this.es = new EventSource(this.url + "/events?me=" + encodeURIComponent(this.me));
+      const q = new URLSearchParams(this.token ? { token: this.token, me: this.me } : { me: this.me, key: this.key });
+      const es = this.es = new EventSource(this.url + "/events?" + q);
       es.addEventListener("threads", (e) => {
         this.threads = JSON.parse(e.data).threads;
         this._changed();
@@ -8863,6 +8915,45 @@ var RoomKit = (() => {
       };
       this._changed();
       return true;
+    }
+    /**
+     * 登录：新窗口打开小镇的登录页（GitHub / linux.do 授权），这边轮询拿令牌。
+     * 不靠 postMessage：DSH 桌面版里新窗口可能没有 opener。
+     */
+    async login(provider) {
+      const nonce = Array.from(crypto.getRandomValues(new Uint8Array(24)), (b) => b.toString(16).padStart(2, "0")).join("");
+      const w = window.open(this.url + "/auth/" + provider + "/start?nonce=" + nonce, "town-login", "width=520,height=680");
+      if (!w) throw new Error("弹窗被拦住了，允许弹窗后再试");
+      this.loggingIn = true;
+      this._changed();
+      try {
+        for (let i = 0; i < 150; i++) {
+          await delay2(2e3);
+          const r = await this.call("authPoll", { nonce });
+          if (r.token) {
+            this.token = r.token;
+            this._save();
+            return this.connect();
+          }
+        }
+        throw new Error("登录等太久了，再试一次");
+      } finally {
+        this.loggingIn = false;
+        this._changed();
+      }
+    }
+    async logout() {
+      if (this.thread) await this.leave(true);
+      try {
+        await this.call("logout", {});
+      } catch (e) {
+      }
+      this.token = "";
+      this.account = null;
+      this.meInfo = null;
+      this._save();
+      this.disconnect();
+      this._changed();
     }
     disconnect() {
       if (this.es) {
