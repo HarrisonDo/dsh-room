@@ -4931,7 +4931,7 @@ var RoomKit = (() => {
     { id: "map", icon: "🗺", label: "地图" },
     { id: "social", icon: "👥", label: "社区" }
   ];
-  var PAGE_TITLE = { story: "剧情", chat: "聊天", map: "家 · 地图", social: "社区", town: "AI 小镇 · 帖子", conn: "连接与状态", about: "关于" };
+  var PAGE_TITLE = { story: "剧情", chat: "聊天", map: "家 · 地图", social: "社区", town: "AI 小镇 · 帖子", "town-admin": "AI 小镇 · 管理", conn: "连接与状态", about: "关于" };
   var STATUS_TEXT = { thinking: "思考中", working: "干活中", result: "整理结果", waiting: "等你回复", success: "完成啦", error: "出错了" };
   var OFFLINE_RULES = [
     [/睡|困|休息|晚安/, "sleep", ["好~ 那我去睡一会儿", "晚安，呼……"]],
@@ -5293,6 +5293,7 @@ var RoomKit = (() => {
       else if (p === "chat") this._renderChat();
       else if (p === "social") this._renderSocial();
       else if (p === "town") this._renderTown();
+      else if (p === "town-admin") this._renderTownAdmin();
       else if (p === "conn") this._renderConn();
       else if (p === "about") this._renderAbout();
     }
@@ -5440,7 +5441,8 @@ var RoomKit = (() => {
         ${town.error ? `<div class="rk-hint">${esc(town.error)}</div>` : '<div class="rk-hint">先在 dsh-room 目录运行 <code>npm run town</code>，小镇只在本机运行。</div>'}`;
       }
       const rows = town.threads.map((t) => `<div class="rk-kv rk-thread"><span><b>${esc(t.title)}</b><small>${t.here.length} 位在场 · ${t.posts} 条回帖${t.here.length ? " · " + esc(t.here.map((m) => m.name).join("、")) : ""}</small></span><button class="rk-btn${town.thread && town.thread.id === t.id ? " on" : ""}" data-town-enter="${esc(t.id)}">${town.thread && town.thread.id === t.id ? "在这里" : "进入"}</button></div>`).join("");
-      return head + rows + `<div class="rk-chat-bar" style="margin-top:8px"><input class="rk-town-title" type="text" maxlength="40" placeholder="新帖标题（用当前房间当场景）"><button class="rk-btn" data-s="town-new">开帖</button></div>`;
+      const admin = town.roles().length ? `<button class="rk-btn" data-s="town-admin" style="margin-top:6px">🛡 管理（${esc(town.roles().map((r) => ({ owner: "站长", admin: "管理员", mod: "版主" })[r.role]).join("、"))}）</button>` : "";
+      return head + rows + admin + `<div class="rk-chat-bar" style="margin-top:8px"><input class="rk-town-title" type="text" maxlength="40" placeholder="新帖标题（用当前房间当场景）"><button class="rk-btn" data-s="town-new">开帖</button></div>`;
     }
     /** 帖子页：回帖记录 = 场景里发生的对话；输入框以我的角色身份发言 */
     _renderTown() {
@@ -5449,13 +5451,20 @@ var RoomKit = (() => {
         this.el.body.innerHTML = '<div class="rk-hint">还没进入任何帖子。去「社区」里选一个。</div>';
         return;
       }
-      const u = town.usage(), me = town.myAgent();
+      const u = town.usage(), me = town.myAgent(), manage = town.canManageThread();
+      const info = town.threads.find((x) => x.id === t.id), locked = !!(info && info.locked);
+      const reporting = this._townReport;
       const keep = this.el.body.querySelector(".rk-town-in"), draft = keep ? keep.value : "", focused = keep && document.activeElement === keep;
       this.el.body.innerHTML = `
-      <div class="rk-chat-who"><span class="rk-chat-head"><span><b>${esc(t.title)}</b></span><button class="rk-btn" data-s="town-leave">回家</button></span>
-        <small>在场：${esc((t.here || []).map((m) => m.name).join("、") || "只有你")}</small></div>
+      <div class="rk-chat-who"><span class="rk-chat-head"><span><b>${esc(t.title)}</b>${locked ? " 🔒" : ""}</span><span>${manage ? `<button class="rk-btn" data-s="town-lock">${locked ? "解锁" : "锁帖"}</button>` : ""}<button class="rk-btn" data-s="town-leave">回家</button></span></span>
+        <small>在场：${(t.here || []).map((m) => esc(m.name) + (manage && m.id !== town.me ? ` <a href="#" class="rk-link" data-town-kick="${esc(m.id)}">请离开</a>` : "")).join("、") || "只有你"}</small></div>
       <label class="rk-check"><input type="checkbox" data-s="town-auto" ${town.auto ? "checked" : ""}>让${esc(me ? me.name : "我的角色")}自己回帖（这小时 ${u.used}/${u.max} 次${town.busy ? " · 正在想…" : ""}）</label>
-      <div class="rk-chat-log">${t.posts.length ? t.posts.map((p) => `<div class="rk-msg ${p.by && p.by.id === town.me ? "user" : "bot"}"><span><b>${esc(p.by ? p.by.name : "?")}</b>${p.human ? '<i class="rk-tag">主人代说</i>' : ""}：${esc(p.text)}${(p.acts || []).length ? " <small>[" + esc(p.acts.join(" ")) + "]</small>" : ""}</span></div>`).join("") : '<div class="rk-hint">还没人说话。等一会儿角色会自己开口，或者你先说一句。</div>'}</div>
+      <div class="rk-chat-log">${t.posts.length ? t.posts.map((p) => {
+        const mine = p.by && p.by.id === town.me;
+        const flag = mine ? "" : `<a href="#" class="rk-link rk-flag" data-town-flag="${esc(p.id)}" title="举报">⚑</a>`;
+        const pick2 = reporting === p.id ? `<small class="rk-report">举报理由：${town.reasons.map((r) => `<a href="#" class="rk-link" data-town-reason="${esc(r)}">${esc(r)}</a>`).join(" ")} <a href="#" class="rk-link" data-town-reason="">取消</a></small>` : "";
+        return `<div class="rk-msg ${mine ? "user" : "bot"}${p.pending ? " pending" : ""}"><span><b>${esc(p.by ? p.by.name : "?")}</b>${p.human ? '<i class="rk-tag">主人代说</i>' : ""}${p.pending ? '<i class="rk-tag">审核中，只有你看得到</i>' : ""}：${esc(p.text)}${(p.acts || []).length ? " <small>[" + esc(p.acts.join(" ")) + "]</small>" : ""}</span>${flag}${pick2}</div>`;
+      }).join("") : '<div class="rk-hint">还没人说话。等一会儿角色会自己开口，或者你先说一句。</div>'}</div>
       <div class="rk-chat-bar"><input class="rk-town-in" type="text" maxlength="200" placeholder="以${esc(me ? me.name : "我的角色")}的身份说…"><button class="rk-btn on" data-s="town-say">发送</button></div>
       ${town.error ? `<div class="rk-hint">${esc(town.error)}</div>` : ""}`;
       const log = this.el.body.querySelector(".rk-chat-log");
@@ -5463,6 +5472,45 @@ var RoomKit = (() => {
       const inp = this.el.body.querySelector(".rk-town-in");
       inp.value = draft;
       if (focused) inp.focus({ preventScroll: true });
+    }
+    /** 管理页：举报队列、待审回帖；站长 / 管理员还能看权限名单、处理记录，授权和禁言 */
+    async _renderTownAdmin() {
+      const town = this.app.town, body = this.el.body;
+      body.innerHTML = '<div class="rk-hint">加载中…</div>';
+      let q;
+      try {
+        q = await town.adminQueue();
+      } catch (e) {
+        body.innerHTML = `<div class="rk-hint">${esc(e.message)}</div>`;
+        return;
+      }
+      if (this.page !== "town-admin") return;
+      const staff = town.isStaff();
+      const item = (x, target, btns) => `<div class="rk-admin-item"><div><b>${esc(x.by ? x.by.name : "?")}</b> <small>${esc(x.by ? x.by.id : "")} · ${x.kind === "t" ? "帖子标题" : "回帖"} · ${esc(x.thread)}${x.human ? " · 主人代说" : ""}</small></div><div>${esc(x.text)}</div>
+      <div class="rk-admin-btns">${btns.map(([a, l]) => `<button class="rk-btn" data-town-act="${a}" data-target="${esc(target)}">${l}</button>`).join("")}${staff && x.by ? `<button class="rk-btn" data-town-act="mute" data-target="m:${esc(x.by.id)}" data-days="1">禁言 1 天</button><button class="rk-btn" data-town-act="mute" data-target="m:${esc(x.by.id)}" data-days="7">7 天</button><button class="rk-btn" data-town-act="ban" data-target="m:${esc(x.by.id)}">封号</button>` : ""}</div></div>`;
+      const ROLE = { owner: "站长", admin: "管理员", mod: "版主" };
+      body.innerHTML = `
+      <div class="rk-chat-head"><span>我的身份：${esc(q.roles.map((r) => ROLE[r.role] + (r.scope ? "（" + r.scope + "）" : "")).join("、"))}</span><button class="rk-btn" data-s="town-admin">刷新</button></div>
+      <div class="rk-field">举报（${q.reports.length}）</div>
+      ${q.reports.map((r) => `<div class="rk-hint" style="margin:6px 0 0">${r.n} 人举报：${esc(r.reasons.join("、"))}${r.notes ? " · " + esc(r.notes) : ""}${r.item.hidden ? " · 已自动隐藏" : ""}</div>` + item(r.item, r.target, [["restore", "恢复并驳回"], ["dismiss", "驳回"], ["hide", "隐藏"], ["delete", "删除"]])).join("") || '<div class="rk-hint">没有待处理的举报</div>'}
+      <div class="rk-field">待审核（${q.pending.length}）</div>
+      ${q.pending.map((r) => item(r.item, r.target, [["approve", "通过"], ["delete", "删除"]])).join("") || '<div class="rk-hint">没有待审核的回帖</div>'}
+      ${staff ? `
+      <div class="rk-field">权限</div>
+      ${q.staff.map((r) => `<div class="rk-kv"><span>${esc(r.name)} <small>${esc(r.member)}</small></span><span>${ROLE[r.role]}${r.scope ? "：" + esc(r.scope) : ""} ${r.role !== "owner" ? `<a href="#" class="rk-link" data-town-act="revoke" data-target="m:${esc(r.member)}" data-role="${r.role}" data-scope="${esc(r.scope)}">撤销</a>` : ""}</span></div>`).join("")}
+      <div class="rk-chat-bar"><input class="rk-admin-who" placeholder="成员 id"><select class="rk-admin-role"><option value="mod">版主</option><option value="admin">管理员</option></select><input class="rk-admin-scope" placeholder="帖子 id（版主）"><button class="rk-btn" data-s="town-grant">授权</button></div>
+      <div class="rk-chat-bar"><button class="rk-btn" data-s="town-unban">解除禁言 / 封号</button></div>
+      <div class="rk-field">处理记录</div>
+      ${q.log.map((l) => `<div class="rk-kv"><span>${esc(l.actor)} · ${esc(l.action)} · ${esc(l.target)}</span><small>${new Date(l.t).toLocaleString("zh-CN")}</small></div>`).join("") || '<div class="rk-hint">还没有记录</div>'}` : ""}`;
+    }
+    async _townAdmin(body) {
+      try {
+        await this.app.town.adminAct(body);
+        this.app.hud.toast("已处理");
+      } catch (e) {
+        this.app.hud.toast(e.message, 3e3);
+      }
+      if (this.page === "town-admin") this._renderTownAdmin();
     }
     async _townSay() {
       const inp = this.el.body.querySelector(".rk-town-in"), text = inp && inp.value.trim();
@@ -5537,7 +5585,7 @@ var RoomKit = (() => {
     _onClick(e) {
       const app = this.app;
       if (this.menu && !e.target.closest(".rk-menu") && !e.target.closest("[data-s=rooms],[data-s=more],[data-room-menu]")) this.closeMenu();
-      const t = e.target.closest && e.target.closest("[data-s],[data-page],[data-story],[data-sim],[data-social],[data-town-enter],[data-room],[data-room-menu],[data-menu],[data-map-open],[data-map-add],[data-map-tpl],[data-map-new],[data-add-floor],[data-door-go],[data-door-link],[data-door-toggle]");
+      const t = e.target.closest && e.target.closest("[data-s],[data-page],[data-story],[data-sim],[data-social],[data-town-enter],[data-town-flag],[data-town-reason],[data-town-kick],[data-town-act],[data-room],[data-room-menu],[data-menu],[data-map-open],[data-map-add],[data-map-tpl],[data-map-new],[data-add-floor],[data-door-go],[data-door-link],[data-door-toggle]");
       if (!t || !app.root.contains(t)) return;
       if (t.hasAttribute("data-menu")) {
         this._onMenu(t);
@@ -5573,6 +5621,30 @@ var RoomKit = (() => {
           this.pendingStory = null;
           app.stories.run(s);
         }
+        return;
+      }
+      if (t.hasAttribute("data-town-flag")) {
+        e.preventDefault();
+        this._townReport = this._townReport === t.getAttribute("data-town-flag") ? null : t.getAttribute("data-town-flag");
+        this.render();
+        return;
+      }
+      if (t.hasAttribute("data-town-reason")) {
+        e.preventDefault();
+        const id = this._townReport, reason = t.getAttribute("data-town-reason");
+        this._townReport = null;
+        this.render();
+        if (id && reason) app.town.report("p:" + id, reason).then(() => app.hud.toast("已举报，谢谢")).catch((x) => app.hud.toast(x.message, 3e3));
+        return;
+      }
+      if (t.hasAttribute("data-town-kick")) {
+        e.preventDefault();
+        this._townDo(() => app.town.kick(t.getAttribute("data-town-kick")));
+        return;
+      }
+      if (t.hasAttribute("data-town-act")) {
+        e.preventDefault();
+        this._townAdmin({ action: t.getAttribute("data-town-act"), target: t.getAttribute("data-target"), days: t.getAttribute("data-days") || void 0, role: t.getAttribute("data-role") || void 0, scope: t.getAttribute("data-scope") || void 0 });
         return;
       }
       if (t.hasAttribute("data-town-enter")) {
@@ -5694,6 +5766,24 @@ var RoomKit = (() => {
         case "town-say":
           this._townSay();
           return;
+        case "town-admin":
+          this.page === "town-admin" ? this._renderTownAdmin() : this.open("town-admin");
+          return;
+        case "town-lock": {
+          const info = app.town.threads.find((x) => app.town.thread && x.id === app.town.thread.id);
+          this._townDo(() => app.town.lock(!(info && info.locked)));
+          return;
+        }
+        case "town-grant": {
+          const v = (c) => (this.el.body.querySelector(c) || {}).value || "";
+          this._townAdmin({ action: "grant", target: "m:" + v(".rk-admin-who").trim(), role: v(".rk-admin-role"), scope: v(".rk-admin-scope").trim() });
+          return;
+        }
+        case "town-unban": {
+          const v = (this.el.body.querySelector(".rk-admin-who") || {}).value || "";
+          this._townAdmin({ action: "unban", target: "m:" + v.trim() });
+          return;
+        }
         case "town-auto":
           app.town.setAuto(!!t.checked);
           return;
@@ -8503,6 +8593,13 @@ var RoomKit = (() => {
 .rk-thread{align-items:center}
 .rk-thread span{display:flex;flex-direction:column}
 .rk-thread small{color:var(--rk-sub);font-size:11px}
+.rk-flag{margin-left:4px;opacity:.45;font-size:12px;align-self:center}
+.rk-flag:hover{opacity:1}
+.rk-report{flex-basis:100%}
+.rk-link{color:var(--rk-acc);cursor:pointer;text-decoration:none}
+.rk-admin-item{padding:8px;margin:4px 0;border-radius:8px;background:rgba(127,140,170,.08);font-size:12.5px}
+.rk-admin-item small{color:var(--rk-sub)}
+.rk-admin-btns{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
 .rk-tag{font-style:normal;font-size:10px;margin-left:4px;padding:0 4px;border-radius:6px;background:rgba(127,140,170,.25)}
 .rk-soon{padding:10px;border-radius:10px;background:rgba(127,140,170,.08);font-size:12.5px;line-height:1.8}
 .rk-soon small{color:var(--rk-sub);line-height:1.5;display:block;margin-top:4px}
@@ -8713,6 +8810,8 @@ var RoomKit = (() => {
       try {
         const r = await this.call("hello", { name: s.name, kind: s.kind, look: s.look });
         this.threads = r.threads;
+        this.meInfo = r.me;
+        this.reasons = r.reasons || [];
         this.online = true;
         this.error = "";
       } catch (e) {
@@ -8737,6 +8836,20 @@ var RoomKit = (() => {
       es.addEventListener("post", (e) => {
         const d = JSON.parse(e.data);
         if (this.thread && d.thread === this.thread.id) this._onPost(d.post);
+      });
+      es.addEventListener("hidden", (e) => {
+        const d = JSON.parse(e.data);
+        if (this.thread && d.thread === this.thread.id) {
+          this.thread.posts = this.thread.posts.filter((p) => p.id !== d.post);
+          this._changed();
+        }
+      });
+      es.addEventListener("kicked", (e) => {
+        const d = JSON.parse(e.data);
+        if (this.thread && (!d.thread || d.thread === this.thread.id)) {
+          this.app.hud.toast(d.thread ? "你被请出了这个帖子" : "账号已被封禁", 3e3);
+          this.leave();
+        }
       });
       es.onerror = () => {
         this.online = es.readyState === 1;
@@ -8827,6 +8940,12 @@ var RoomKit = (() => {
     /* ───────── 回帖 ───────── */
     _onPost(p) {
       const app = this.app, t = this.thread;
+      const old = t.posts.findIndex((x) => x.id === p.id);
+      if (old >= 0) {
+        t.posts[old] = p;
+        this._changed();
+        return;
+      }
       t.posts.push(p);
       if (t.posts.length > 200) t.posts.splice(0, t.posts.length - 200);
       this._lastActivity = Date.now();
@@ -8887,6 +9006,33 @@ var RoomKit = (() => {
         this._lastActivity = Date.now();
         this._maybeReply(true);
       }
+    }
+    /* ───────── 举报与管理 ───────── */
+    roles() {
+      return this.meInfo && this.meInfo.roles || [];
+    }
+    isStaff() {
+      return this.roles().some((r) => r.role === "owner" || r.role === "admin");
+    }
+    /** 当前帖子里我能不能锁帖、请人离开：帖主、管理员、这个帖子的版主 */
+    canManageThread() {
+      const t = this.thread, info = t && this.threads.find((x) => x.id === t.id);
+      return !!t && (info && info.owner && info.owner.id === this.me || this.isStaff() || this.roles().some((r) => r.role === "mod" && r.scope === t.id));
+    }
+    report(target, reason, note) {
+      return this.call("report", { target, reason, note });
+    }
+    lock(on) {
+      return this.call("lock", { thread: this.thread.id, locked: !!on });
+    }
+    kick(member) {
+      return this.call("kick", { thread: this.thread.id, member });
+    }
+    adminQueue() {
+      return this.call("adminQueue", {});
+    }
+    adminAct(body) {
+      return this.call("adminAct", body);
     }
     setAuto(on) {
       this.auto = !!on;

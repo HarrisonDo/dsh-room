@@ -28,7 +28,7 @@ const PAGES = [
   { id: 'map', icon: '🗺', label: '地图' },
   { id: 'social', icon: '👥', label: '社区' },
 ];
-const PAGE_TITLE = { story: '剧情', chat: '聊天', map: '家 · 地图', social: '社区', town: 'AI 小镇 · 帖子', conn: '连接与状态', about: '关于' };
+const PAGE_TITLE = { story: '剧情', chat: '聊天', map: '家 · 地图', social: '社区', town: 'AI 小镇 · 帖子', 'town-admin': 'AI 小镇 · 管理', conn: '连接与状态', about: '关于' };
 const STATUS_TEXT = { thinking: '思考中', working: '干活中', result: '整理结果', waiting: '等你回复', success: '完成啦', error: '出错了' };
 
 /** 离线聊天：没有接模型时，按关键词选动作 + 角色卡台词回复 */
@@ -302,6 +302,7 @@ export class Shell {
     else if (p === 'chat') this._renderChat();
     else if (p === 'social') this._renderSocial();
     else if (p === 'town') this._renderTown();
+    else if (p === 'town-admin') this._renderTownAdmin();
     else if (p === 'conn') this._renderConn();
     else if (p === 'about') this._renderAbout();
   }
@@ -441,25 +442,63 @@ export class Shell {
         ${town.error ? `<div class="rk-hint">${esc(town.error)}</div>` : '<div class="rk-hint">先在 dsh-room 目录运行 <code>npm run town</code>，小镇只在本机运行。</div>'}`;
     }
     const rows = town.threads.map((t) => `<div class="rk-kv rk-thread"><span><b>${esc(t.title)}</b><small>${t.here.length} 位在场 · ${t.posts} 条回帖${t.here.length ? ' · ' + esc(t.here.map((m) => m.name).join('、')) : ''}</small></span><button class="rk-btn${town.thread && town.thread.id === t.id ? ' on' : ''}" data-town-enter="${esc(t.id)}">${town.thread && town.thread.id === t.id ? '在这里' : '进入'}</button></div>`).join('');
-    return head + rows + `<div class="rk-chat-bar" style="margin-top:8px"><input class="rk-town-title" type="text" maxlength="40" placeholder="新帖标题（用当前房间当场景）"><button class="rk-btn" data-s="town-new">开帖</button></div>`;
+    const admin = town.roles().length ? `<button class="rk-btn" data-s="town-admin" style="margin-top:6px">🛡 管理（${esc(town.roles().map((r) => ({ owner: '站长', admin: '管理员', mod: '版主' })[r.role]).join('、'))}）</button>` : '';
+    return head + rows + admin + `<div class="rk-chat-bar" style="margin-top:8px"><input class="rk-town-title" type="text" maxlength="40" placeholder="新帖标题（用当前房间当场景）"><button class="rk-btn" data-s="town-new">开帖</button></div>`;
   }
 
   /** 帖子页：回帖记录 = 场景里发生的对话；输入框以我的角色身份发言 */
   _renderTown() {
     const town = this.app.town, t = town && town.thread;
     if (!t) { this.el.body.innerHTML = '<div class="rk-hint">还没进入任何帖子。去「社区」里选一个。</div>'; return; }
-    const u = town.usage(), me = town.myAgent();
+    const u = town.usage(), me = town.myAgent(), manage = town.canManageThread();
+    const info = town.threads.find((x) => x.id === t.id), locked = !!(info && info.locked);
+    const reporting = this._townReport;
     const keep = this.el.body.querySelector('.rk-town-in'), draft = keep ? keep.value : '', focused = keep && document.activeElement === keep;
     this.el.body.innerHTML = `
-      <div class="rk-chat-who"><span class="rk-chat-head"><span><b>${esc(t.title)}</b></span><button class="rk-btn" data-s="town-leave">回家</button></span>
-        <small>在场：${esc((t.here || []).map((m) => m.name).join('、') || '只有你')}</small></div>
+      <div class="rk-chat-who"><span class="rk-chat-head"><span><b>${esc(t.title)}</b>${locked ? ' 🔒' : ''}</span><span>${manage ? `<button class="rk-btn" data-s="town-lock">${locked ? '解锁' : '锁帖'}</button>` : ''}<button class="rk-btn" data-s="town-leave">回家</button></span></span>
+        <small>在场：${(t.here || []).map((m) => esc(m.name) + (manage && m.id !== town.me ? ` <a href="#" class="rk-link" data-town-kick="${esc(m.id)}">请离开</a>` : '')).join('、') || '只有你'}</small></div>
       <label class="rk-check"><input type="checkbox" data-s="town-auto" ${town.auto ? 'checked' : ''}>让${esc(me ? me.name : '我的角色')}自己回帖（这小时 ${u.used}/${u.max} 次${town.busy ? ' · 正在想…' : ''}）</label>
-      <div class="rk-chat-log">${t.posts.length ? t.posts.map((p) => `<div class="rk-msg ${p.by && p.by.id === town.me ? 'user' : 'bot'}"><span><b>${esc(p.by ? p.by.name : '?')}</b>${p.human ? '<i class="rk-tag">主人代说</i>' : ''}：${esc(p.text)}${(p.acts || []).length ? ' <small>[' + esc(p.acts.join(' ')) + ']</small>' : ''}</span></div>`).join('') : '<div class="rk-hint">还没人说话。等一会儿角色会自己开口，或者你先说一句。</div>'}</div>
+      <div class="rk-chat-log">${t.posts.length ? t.posts.map((p) => {
+        const mine = p.by && p.by.id === town.me;
+        const flag = mine ? '' : `<a href="#" class="rk-link rk-flag" data-town-flag="${esc(p.id)}" title="举报">⚑</a>`;
+        const pick = reporting === p.id ? `<small class="rk-report">举报理由：${town.reasons.map((r) => `<a href="#" class="rk-link" data-town-reason="${esc(r)}">${esc(r)}</a>`).join(' ')} <a href="#" class="rk-link" data-town-reason="">取消</a></small>` : '';
+        return `<div class="rk-msg ${mine ? 'user' : 'bot'}${p.pending ? ' pending' : ''}"><span><b>${esc(p.by ? p.by.name : '?')}</b>${p.human ? '<i class="rk-tag">主人代说</i>' : ''}${p.pending ? '<i class="rk-tag">审核中，只有你看得到</i>' : ''}：${esc(p.text)}${(p.acts || []).length ? ' <small>[' + esc(p.acts.join(' ')) + ']</small>' : ''}</span>${flag}${pick}</div>`;
+      }).join('') : '<div class="rk-hint">还没人说话。等一会儿角色会自己开口，或者你先说一句。</div>'}</div>
       <div class="rk-chat-bar"><input class="rk-town-in" type="text" maxlength="200" placeholder="以${esc(me ? me.name : '我的角色')}的身份说…"><button class="rk-btn on" data-s="town-say">发送</button></div>
       ${town.error ? `<div class="rk-hint">${esc(town.error)}</div>` : ''}`;
     const log = this.el.body.querySelector('.rk-chat-log'); log.scrollTop = log.scrollHeight;
     const inp = this.el.body.querySelector('.rk-town-in'); inp.value = draft; if (focused) inp.focus({ preventScroll: true });
   }
+  /** 管理页：举报队列、待审回帖；站长 / 管理员还能看权限名单、处理记录，授权和禁言 */
+  async _renderTownAdmin() {
+    const town = this.app.town, body = this.el.body;
+    body.innerHTML = '<div class="rk-hint">加载中…</div>';
+    let q;
+    try { q = await town.adminQueue(); } catch (e) { body.innerHTML = `<div class="rk-hint">${esc(e.message)}</div>`; return; }
+    if (this.page !== 'town-admin') return;
+    const staff = town.isStaff();
+    const item = (x, target, btns) => `<div class="rk-admin-item"><div><b>${esc(x.by ? x.by.name : '?')}</b> <small>${esc(x.by ? x.by.id : '')} · ${x.kind === 't' ? '帖子标题' : '回帖'} · ${esc(x.thread)}${x.human ? ' · 主人代说' : ''}</small></div><div>${esc(x.text)}</div>
+      <div class="rk-admin-btns">${btns.map(([a, l]) => `<button class="rk-btn" data-town-act="${a}" data-target="${esc(target)}">${l}</button>`).join('')}${staff && x.by ? `<button class="rk-btn" data-town-act="mute" data-target="m:${esc(x.by.id)}" data-days="1">禁言 1 天</button><button class="rk-btn" data-town-act="mute" data-target="m:${esc(x.by.id)}" data-days="7">7 天</button><button class="rk-btn" data-town-act="ban" data-target="m:${esc(x.by.id)}">封号</button>` : ''}</div></div>`;
+    const ROLE = { owner: '站长', admin: '管理员', mod: '版主' };
+    body.innerHTML = `
+      <div class="rk-chat-head"><span>我的身份：${esc(q.roles.map((r) => ROLE[r.role] + (r.scope ? '（' + r.scope + '）' : '')).join('、'))}</span><button class="rk-btn" data-s="town-admin">刷新</button></div>
+      <div class="rk-field">举报（${q.reports.length}）</div>
+      ${q.reports.map((r) => `<div class="rk-hint" style="margin:6px 0 0">${r.n} 人举报：${esc(r.reasons.join('、'))}${r.notes ? ' · ' + esc(r.notes) : ''}${r.item.hidden ? ' · 已自动隐藏' : ''}</div>` + item(r.item, r.target, [['restore', '恢复并驳回'], ['dismiss', '驳回'], ['hide', '隐藏'], ['delete', '删除']])).join('') || '<div class="rk-hint">没有待处理的举报</div>'}
+      <div class="rk-field">待审核（${q.pending.length}）</div>
+      ${q.pending.map((r) => item(r.item, r.target, [['approve', '通过'], ['delete', '删除']])).join('') || '<div class="rk-hint">没有待审核的回帖</div>'}
+      ${staff ? `
+      <div class="rk-field">权限</div>
+      ${q.staff.map((r) => `<div class="rk-kv"><span>${esc(r.name)} <small>${esc(r.member)}</small></span><span>${ROLE[r.role]}${r.scope ? '：' + esc(r.scope) : ''} ${r.role !== 'owner' ? `<a href="#" class="rk-link" data-town-act="revoke" data-target="m:${esc(r.member)}" data-role="${r.role}" data-scope="${esc(r.scope)}">撤销</a>` : ''}</span></div>`).join('')}
+      <div class="rk-chat-bar"><input class="rk-admin-who" placeholder="成员 id"><select class="rk-admin-role"><option value="mod">版主</option><option value="admin">管理员</option></select><input class="rk-admin-scope" placeholder="帖子 id（版主）"><button class="rk-btn" data-s="town-grant">授权</button></div>
+      <div class="rk-chat-bar"><button class="rk-btn" data-s="town-unban">解除禁言 / 封号</button></div>
+      <div class="rk-field">处理记录</div>
+      ${q.log.map((l) => `<div class="rk-kv"><span>${esc(l.actor)} · ${esc(l.action)} · ${esc(l.target)}</span><small>${new Date(l.t).toLocaleString('zh-CN')}</small></div>`).join('') || '<div class="rk-hint">还没有记录</div>'}` : ''}`;
+  }
+  async _townAdmin(body) {
+    try { await this.app.town.adminAct(body); this.app.hud.toast('已处理'); } catch (e) { this.app.hud.toast(e.message, 3000); }
+    if (this.page === 'town-admin') this._renderTownAdmin();
+  }
+
   async _townSay() {
     const inp = this.el.body.querySelector('.rk-town-in'), text = inp && inp.value.trim();
     if (!text) return;
@@ -533,7 +572,7 @@ export class Shell {
   _onClick(e) {
     const app = this.app;
     if (this.menu && !e.target.closest('.rk-menu') && !e.target.closest('[data-s=rooms],[data-s=more],[data-room-menu]')) this.closeMenu();
-    const t = e.target.closest && e.target.closest('[data-s],[data-page],[data-story],[data-sim],[data-social],[data-town-enter],[data-room],[data-room-menu],[data-menu],[data-map-open],[data-map-add],[data-map-tpl],[data-map-new],[data-add-floor],[data-door-go],[data-door-link],[data-door-toggle]');
+    const t = e.target.closest && e.target.closest('[data-s],[data-page],[data-story],[data-sim],[data-social],[data-town-enter],[data-town-flag],[data-town-reason],[data-town-kick],[data-town-act],[data-room],[data-room-menu],[data-menu],[data-map-open],[data-map-add],[data-map-tpl],[data-map-new],[data-add-floor],[data-door-go],[data-door-link],[data-door-toggle]');
     if (!t || !app.root.contains(t)) return;
     if (t.hasAttribute('data-menu')) { this._onMenu(t); return; }
     if (t.hasAttribute('data-room-menu')) { e.stopPropagation(); this.openMenu('room', t, t.getAttribute('data-room-menu')); return; }
@@ -551,6 +590,16 @@ export class Shell {
       if (s && !app.stories.active) { this.close(); this.pendingStory = null; app.stories.run(s); }
       return;
     }
+    if (t.hasAttribute('data-town-flag')) { e.preventDefault(); this._townReport = this._townReport === t.getAttribute('data-town-flag') ? null : t.getAttribute('data-town-flag'); this.render(); return; }
+    if (t.hasAttribute('data-town-reason')) {
+      e.preventDefault();
+      const id = this._townReport, reason = t.getAttribute('data-town-reason');
+      this._townReport = null; this.render();
+      if (id && reason) app.town.report('p:' + id, reason).then(() => app.hud.toast('已举报，谢谢')).catch((x) => app.hud.toast(x.message, 3000));
+      return;
+    }
+    if (t.hasAttribute('data-town-kick')) { e.preventDefault(); this._townDo(() => app.town.kick(t.getAttribute('data-town-kick'))); return; }
+    if (t.hasAttribute('data-town-act')) { e.preventDefault(); this._townAdmin({ action: t.getAttribute('data-town-act'), target: t.getAttribute('data-target'), days: t.getAttribute('data-days') || undefined, role: t.getAttribute('data-role') || undefined, scope: t.getAttribute('data-scope') || undefined }); return; }
     if (t.hasAttribute('data-town-enter')) { const id = t.getAttribute('data-town-enter'); if (!(app.town.thread && app.town.thread.id === id)) this._townDo(async () => { await app.town.enter(id); this.open('town'); }); else this.open('town'); return; }
     if (t.hasAttribute('data-sim')) { const v = t.getAttribute('data-sim'); app.setWorkStatus(v ? { state: v, task: v === 'working' ? '模拟任务：整理房间' : null } : null); this._diagAt = 0; return; }
     if (t.hasAttribute('data-social')) { const it = ((app.ext && app.ext.social) || []).find((x) => x.id === t.getAttribute('data-social')); if (it) { it.toggle(); setTimeout(() => { if (this.page === 'social') this.render(); }, 50); } return; }
@@ -585,6 +634,10 @@ export class Shell {
       case 'town-new': { const i = this.el.body.querySelector('.rk-town-title'); this._townDo(async () => { await app.town.create(i && i.value.trim()); this.open('town'); }); return; }
       case 'town-leave': this._townDo(async () => { await app.town.leave(); this.open('social'); }); return;
       case 'town-say': this._townSay(); return;
+      case 'town-admin': this.page === 'town-admin' ? this._renderTownAdmin() : this.open('town-admin'); return;
+      case 'town-lock': { const info = app.town.threads.find((x) => app.town.thread && x.id === app.town.thread.id); this._townDo(() => app.town.lock(!(info && info.locked))); return; }
+      case 'town-grant': { const v = (c) => (this.el.body.querySelector(c) || {}).value || ''; this._townAdmin({ action: 'grant', target: 'm:' + v('.rk-admin-who').trim(), role: v('.rk-admin-role'), scope: v('.rk-admin-scope').trim() }); return; }
+      case 'town-unban': { const v = (this.el.body.querySelector('.rk-admin-who') || {}).value || ''; this._townAdmin({ action: 'unban', target: 'm:' + v.trim() }); return; }
       case 'town-auto': app.town.setAuto(!!t.checked); return;
       case 'chat-group': this.chatGroup = !this.chatGroup; this._renderChat(); break;
       case 'story-go': { const s = this.pendingStory; this.pendingStory = null; if (s) app.stories.run(s); break; }

@@ -172,6 +172,13 @@ export const CSS = `
 .rk-thread{align-items:center}
 .rk-thread span{display:flex;flex-direction:column}
 .rk-thread small{color:var(--rk-sub);font-size:11px}
+.rk-flag{margin-left:4px;opacity:.45;font-size:12px;align-self:center}
+.rk-flag:hover{opacity:1}
+.rk-report{flex-basis:100%}
+.rk-link{color:var(--rk-acc);cursor:pointer;text-decoration:none}
+.rk-admin-item{padding:8px;margin:4px 0;border-radius:8px;background:rgba(127,140,170,.08);font-size:12.5px}
+.rk-admin-item small{color:var(--rk-sub)}
+.rk-admin-btns{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
 .rk-tag{font-style:normal;font-size:10px;margin-left:4px;padding:0 4px;border-radius:6px;background:rgba(127,140,170,.25)}
 .rk-soon{padding:10px;border-radius:10px;background:rgba(127,140,170,.08);font-size:12.5px;line-height:1.8}
 .rk-soon small{color:var(--rk-sub);line-height:1.5;display:block;margin-top:4px}

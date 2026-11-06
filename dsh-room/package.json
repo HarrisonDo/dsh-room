@@ -35,7 +35,7 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "serve": "node scripts/preview.mjs",
-    "town": "node scripts/town.mjs --db town.db",
+    "town": "node scripts/town.mjs --db town.db --words ../out.txt",
     "preview": "node scripts/launch.mjs",
     "desktop": "node scripts/launch.mjs --desktop",
     "test": "node --test tests/*.test.mjs",

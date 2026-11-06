@@ -59,6 +59,7 @@ export class Town {
     try {
       const r = await this.call('hello', { name: s.name, kind: s.kind, look: s.look });
       this.threads = r.threads;
+      this.meInfo = r.me; this.reasons = r.reasons || [];
       this.online = true; this.error = '';
     } catch (e) {
       this.online = false; this.error = e.message === 'Failed to fetch' ? '连不上小镇（先运行 npm run town）' : e.message;
@@ -69,6 +70,8 @@ export class Town {
     es.addEventListener('threads', (e) => { this.threads = JSON.parse(e.data).threads; this._changed(); });
     es.addEventListener('presence', (e) => { const d = JSON.parse(e.data); if (this.thread && d.thread === this.thread.id) { this.thread.here = d.here; this._cast(); this._changed(); } });
     es.addEventListener('post', (e) => { const d = JSON.parse(e.data); if (this.thread && d.thread === this.thread.id) this._onPost(d.post); });
+    es.addEventListener('hidden', (e) => { const d = JSON.parse(e.data); if (this.thread && d.thread === this.thread.id) { this.thread.posts = this.thread.posts.filter((p) => p.id !== d.post); this._changed(); } });
+    es.addEventListener('kicked', (e) => { const d = JSON.parse(e.data); if (this.thread && (!d.thread || d.thread === this.thread.id)) { this.app.hud.toast(d.thread ? '你被请出了这个帖子' : '账号已被封禁', 3000); this.leave(); } });
     es.onerror = () => { this.online = es.readyState === 1; this._changed(); };
     es.onopen = () => { this.online = true; if (this.thread) this.call('join', { thread: this.thread.id }).catch(() => {}); this._changed(); };
     this._changed();
@@ -147,6 +150,8 @@ export class Town {
 
   _onPost(p) {
     const app = this.app, t = this.thread;
+    const old = t.posts.findIndex((x) => x.id === p.id);
+    if (old >= 0) { t.posts[old] = p; this._changed(); return; }   // 审核通过、被恢复：原地更新
     t.posts.push(p);
     if (t.posts.length > 200) t.posts.splice(0, t.posts.length - 200);
     this._lastActivity = Date.now();
@@ -201,6 +206,21 @@ export class Town {
     if (!this.thread || Date.now() - this._lastActivity < IDLE_MS) return;
     if (Math.random() < 0.35) { this._lastActivity = Date.now(); this._maybeReply(true); }
   }
+
+  /* ───────── 举报与管理 ───────── */
+
+  roles() { return (this.meInfo && this.meInfo.roles) || []; }
+  isStaff() { return this.roles().some((r) => r.role === 'owner' || r.role === 'admin'); }
+  /** 当前帖子里我能不能锁帖、请人离开：帖主、管理员、这个帖子的版主 */
+  canManageThread() {
+    const t = this.thread, info = t && this.threads.find((x) => x.id === t.id);
+    return !!t && ((info && info.owner && info.owner.id === this.me) || this.isStaff() || this.roles().some((r) => r.role === 'mod' && r.scope === t.id));
+  }
+  report(target, reason, note) { return this.call('report', { target, reason, note }); }
+  lock(on) { return this.call('lock', { thread: this.thread.id, locked: !!on }); }
+  kick(member) { return this.call('kick', { thread: this.thread.id, member }); }
+  adminQueue() { return this.call('adminQueue', {}); }
+  adminAct(body) { return this.call('adminAct', body); }
 
   setAuto(on) { this.auto = !!on; this._save(); this._changed(); }
   usage() { this._budget(); return { used: this.stamps.length, max: AUTO_PER_HOUR }; }

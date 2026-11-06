@@ -15,3 +15,6 @@ test-results/
 .claude/
 CLAUDE.md
 town.db*
+out.txt
+# 敏感词库：不进公开仓库
+out.txt
