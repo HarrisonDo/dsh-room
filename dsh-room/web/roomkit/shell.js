@@ -28,7 +28,7 @@ const PAGES = [
   { id: 'map', icon: '🗺', label: '地图' },
   { id: 'social', icon: '👥', label: '社区' },
 ];
-const PAGE_TITLE = { story: '剧情', chat: '聊天', map: '家 · 地图', social: '社区', conn: '连接与状态', about: '关于' };
+const PAGE_TITLE = { story: '剧情', chat: '聊天', map: '家 · 地图', social: '社区', town: 'AI 小镇 · 帖子', conn: '连接与状态', about: '关于' };
 const STATUS_TEXT = { thinking: '思考中', working: '干活中', result: '整理结果', waiting: '等你回复', success: '完成啦', error: '出错了' };
 
 /** 离线聊天：没有接模型时，按关键词选动作 + 角色卡台词回复 */
@@ -81,6 +81,7 @@ export class Shell {
     root.addEventListener('click', (e) => this._onClick(e));
     root.addEventListener('keydown', (e) => {
       if (e.target && e.target.matches && e.target.matches('.rk-chat-in') && e.key === 'Enter' && !e.isComposing) { e.preventDefault(); this._sendChat(); }
+      if (e.target && e.target.matches && e.target.matches('.rk-town-in') && e.key === 'Enter' && !e.isComposing) { e.preventDefault(); this._townSay(); }
       if (e.target && e.target.matches && e.target.matches('[data-menu-in]') && e.key === 'Enter' && !e.isComposing) { e.preventDefault(); this._menuInput(e.target); }
       if (e.key === 'Escape' && this.menu) { e.stopPropagation(); this.closeMenu(); }
     }, true);
@@ -300,6 +301,7 @@ export class Shell {
     else if (p === 'map') this._renderMap();
     else if (p === 'chat') this._renderChat();
     else if (p === 'social') this._renderSocial();
+    else if (p === 'town') this._renderTown();
     else if (p === 'conn') this._renderConn();
     else if (p === 'about') this._renderAbout();
   }
@@ -429,14 +431,52 @@ export class Shell {
     if (this.chatLog.length > 60) this.chatLog.splice(0, this.chatLog.length - 60);
   }
 
+  /** 社区页里的 AI 小镇：连接、帖子列表、开新帖 */
+  _townSection() {
+    const town = this.app.town;
+    if (!town) return '';
+    const head = '<div class="rk-field">AI 小镇（本机原型）</div><div class="rk-hint" style="margin-top:0">一个帖子就是一个场景。角色进帖子后会自己回帖、在场景里做出反应；你也可以用角色的身份说话。</div>';
+    if (!town.online) {
+      return head + `<div class="rk-chat-bar"><input class="rk-town-url" type="text" value="${esc(town.url)}"><button class="rk-btn on" data-s="town-connect">连接</button></div>
+        ${town.error ? `<div class="rk-hint">${esc(town.error)}</div>` : '<div class="rk-hint">先在 dsh-room 目录运行 <code>npm run town</code>，小镇只在本机运行。</div>'}`;
+    }
+    const rows = town.threads.map((t) => `<div class="rk-kv rk-thread"><span><b>${esc(t.title)}</b><small>${t.here.length} 位在场 · ${t.posts} 条回帖${t.here.length ? ' · ' + esc(t.here.map((m) => m.name).join('、')) : ''}</small></span><button class="rk-btn${town.thread && town.thread.id === t.id ? ' on' : ''}" data-town-enter="${esc(t.id)}">${town.thread && town.thread.id === t.id ? '在这里' : '进入'}</button></div>`).join('');
+    return head + rows + `<div class="rk-chat-bar" style="margin-top:8px"><input class="rk-town-title" type="text" maxlength="40" placeholder="新帖标题（用当前房间当场景）"><button class="rk-btn" data-s="town-new">开帖</button></div>`;
+  }
+
+  /** 帖子页：回帖记录 = 场景里发生的对话；输入框以我的角色身份发言 */
+  _renderTown() {
+    const town = this.app.town, t = town && town.thread;
+    if (!t) { this.el.body.innerHTML = '<div class="rk-hint">还没进入任何帖子。去「社区」里选一个。</div>'; return; }
+    const u = town.usage(), me = town.myAgent();
+    const keep = this.el.body.querySelector('.rk-town-in'), draft = keep ? keep.value : '', focused = keep && document.activeElement === keep;
+    this.el.body.innerHTML = `
+      <div class="rk-chat-who"><span class="rk-chat-head"><span><b>${esc(t.title)}</b></span><button class="rk-btn" data-s="town-leave">回家</button></span>
+        <small>在场：${esc((t.here || []).map((m) => m.name).join('、') || '只有你')}</small></div>
+      <label class="rk-check"><input type="checkbox" data-s="town-auto" ${town.auto ? 'checked' : ''}>让${esc(me ? me.name : '我的角色')}自己回帖（这小时 ${u.used}/${u.max} 次${town.busy ? ' · 正在想…' : ''}）</label>
+      <div class="rk-chat-log">${t.posts.length ? t.posts.map((p) => `<div class="rk-msg ${p.by && p.by.id === town.me ? 'user' : 'bot'}"><span><b>${esc(p.by ? p.by.name : '?')}</b>${p.human ? '<i class="rk-tag">主人代说</i>' : ''}：${esc(p.text)}${(p.acts || []).length ? ' <small>[' + esc(p.acts.join(' ')) + ']</small>' : ''}</span></div>`).join('') : '<div class="rk-hint">还没人说话。等一会儿角色会自己开口，或者你先说一句。</div>'}</div>
+      <div class="rk-chat-bar"><input class="rk-town-in" type="text" maxlength="200" placeholder="以${esc(me ? me.name : '我的角色')}的身份说…"><button class="rk-btn on" data-s="town-say">发送</button></div>
+      ${town.error ? `<div class="rk-hint">${esc(town.error)}</div>` : ''}`;
+    const log = this.el.body.querySelector('.rk-chat-log'); log.scrollTop = log.scrollHeight;
+    const inp = this.el.body.querySelector('.rk-town-in'); inp.value = draft; if (focused) inp.focus({ preventScroll: true });
+  }
+  async _townSay() {
+    const inp = this.el.body.querySelector('.rk-town-in'), text = inp && inp.value.trim();
+    if (!text) return;
+    inp.value = '';
+    try { await this.app.town.say(text); } catch (e) { this.app.hud.toast('没发出去：' + e.message); }
+  }
+  async _townDo(fn) {
+    try { await fn(); } catch (e) { this.app.hud.toast(e.message, 3000); }
+  }
+
   _renderSocial() {
     const app = this.app, items = (app.ext && app.ext.social) || [];
     this.el.body.innerHTML = `
       ${items.length ? `<div class="rk-field">在 DSH 里</div>${items.map((it) => `<label class="rk-check rk-opt"><input type="checkbox" data-social="${esc(it.id)}" ${it.on() ? 'checked' : ''}><span><b>${esc(it.label)}</b><small>${esc(it.sub || '')}</small></span></label>`).join('')}` : ''}
       <div class="rk-field">这个房间里的角色（${app.agents.size}）</div>
       ${[...app.agents.values()].map((a) => `<div class="rk-kv"><span>${esc(a.name)}</span><span>${esc(a.status ? STATUS_TEXT[a.status.state] || a.status.state : a.activity || '')}</span></div>`).join('')}
-      <div class="rk-field">串门与社区</div>
-      <div class="rk-soon">🐋 多只大肥鱼互相串门、聊天<br>🧩 网友分享的家具 / 房间 / 剧情广场<br><small>规划中（见 docs/05 第六节）：本机多窗口同步 → 本地中继串门 → 公网社区。</small></div>`;
+      ${this._townSection()}`;
   }
 
   _renderConn() {
@@ -493,7 +533,7 @@ export class Shell {
   _onClick(e) {
     const app = this.app;
     if (this.menu && !e.target.closest('.rk-menu') && !e.target.closest('[data-s=rooms],[data-s=more],[data-room-menu]')) this.closeMenu();
-    const t = e.target.closest && e.target.closest('[data-s],[data-page],[data-story],[data-sim],[data-social],[data-room],[data-room-menu],[data-menu],[data-map-open],[data-map-add],[data-map-tpl],[data-map-new],[data-add-floor],[data-door-go],[data-door-link],[data-door-toggle]');
+    const t = e.target.closest && e.target.closest('[data-s],[data-page],[data-story],[data-sim],[data-social],[data-town-enter],[data-room],[data-room-menu],[data-menu],[data-map-open],[data-map-add],[data-map-tpl],[data-map-new],[data-add-floor],[data-door-go],[data-door-link],[data-door-toggle]');
     if (!t || !app.root.contains(t)) return;
     if (t.hasAttribute('data-menu')) { this._onMenu(t); return; }
     if (t.hasAttribute('data-room-menu')) { e.stopPropagation(); this.openMenu('room', t, t.getAttribute('data-room-menu')); return; }
@@ -511,6 +551,7 @@ export class Shell {
       if (s && !app.stories.active) { this.close(); this.pendingStory = null; app.stories.run(s); }
       return;
     }
+    if (t.hasAttribute('data-town-enter')) { const id = t.getAttribute('data-town-enter'); if (!(app.town.thread && app.town.thread.id === id)) this._townDo(async () => { await app.town.enter(id); this.open('town'); }); else this.open('town'); return; }
     if (t.hasAttribute('data-sim')) { const v = t.getAttribute('data-sim'); app.setWorkStatus(v ? { state: v, task: v === 'working' ? '模拟任务：整理房间' : null } : null); this._diagAt = 0; return; }
     if (t.hasAttribute('data-social')) { const it = ((app.ext && app.ext.social) || []).find((x) => x.id === t.getAttribute('data-social')); if (it) { it.toggle(); setTimeout(() => { if (this.page === 'social') this.render(); }, 50); } return; }
     if (t.hasAttribute('data-door-go')) { const o = app.world.byId.get(t.getAttribute('data-door-go')); if (o) app.walkThrough(o); return; }
@@ -540,6 +581,11 @@ export class Shell {
       case 'conn': this.open('conn'); break;
       case 'close': this.close(); break;
       case 'chat-send': this._sendChat(); break;
+      case 'town-connect': { const u = this.el.body.querySelector('.rk-town-url'); this._townDo(() => app.town.connect(u && u.value.trim())); return; }
+      case 'town-new': { const i = this.el.body.querySelector('.rk-town-title'); this._townDo(async () => { await app.town.create(i && i.value.trim()); this.open('town'); }); return; }
+      case 'town-leave': this._townDo(async () => { await app.town.leave(); this.open('social'); }); return;
+      case 'town-say': this._townSay(); return;
+      case 'town-auto': app.town.setAuto(!!t.checked); return;
       case 'chat-group': this.chatGroup = !this.chatGroup; this._renderChat(); break;
       case 'story-go': { const s = this.pendingStory; this.pendingStory = null; if (s) app.stories.run(s); break; }
       case 'story-later': if (this.pendingStory) this._dismissed.add(this.pendingStory.id); this.pendingStory = null; break;   // 这次打开不再提示；下次进房间再提醒

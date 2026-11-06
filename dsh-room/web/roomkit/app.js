@@ -33,6 +33,7 @@ import { injectCss } from './style.js';
 import { Emitter, clamp, pick, rand, clone, uid, delay } from './util.js';
 import { orient } from './iso.js';
 import { VERSION } from './version.js';
+import { Town } from './town.js';
 
 export { VERSION };
 
@@ -111,6 +112,7 @@ class App {
     this.editor = new Editor(this);
     this.soundOn = !!this.storage.pref('sound');
     this.shell = new Shell(this);
+    this.town = new Town(this);
     this.desk = this.opts.desk ? new Desk(this) : null;
 
     this._syncAgents(true);
@@ -687,7 +689,7 @@ class App {
     if (this.ext.chat) {
       const c = this.characterOf(a);
       try {
-        const r = await this.ext.chat({ agent: { id: a.id, name: a.name }, character: c ? { id: c.id, name: c.name, persona: c.persona || '', scenario: c.scenario || '' } : null, text, history: (history || []).map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', text: m.who && m.who !== a.name ? m.who + '：' + m.text : m.text })), group: !!(opts && opts.group), room: this.describe() });
+        const r = await this.ext.chat({ agent: { id: a.id, name: a.name }, character: c ? { id: c.id, name: c.name, persona: c.persona || '', scenario: c.scenario || '' } : null, text, history: (history || []).map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', text: m.who && m.who !== a.name ? m.who + '：' + m.text : m.text })), group: !!(opts && opts.group), thread: (opts && opts.thread) || '', room: this.describe() });
         if (r && r.text) { res = parseActs(r.text); if (Array.isArray(r.acts)) res.acts = res.acts.concat(r.acts); }
         else note = (r && r.error) || '模型没有回话';
       } catch (e) { note = e.message || String(e); }
@@ -887,7 +889,7 @@ class App {
 
   /** 去家里的另一个房间：转场 + 跟随的角色一起过去 */
   async goRoom(id) {
-    if (!id || this._going || id === this.world.scene.id) return false;
+    if (!id || this._going || this.visiting || id === this.world.scene.id) return false;
     const scene = this.home.sceneFor(id) || this.storage.load(id);
     if (!scene || scene.id !== id) return false;
     this._going = true;

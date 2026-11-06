@@ -1936,7 +1936,7 @@
       const lib = this.lib, hue = Math.round(look.body ? hueOf(look.body) - BASE_HUE : 0);
       const shift = (hue % 360 + 360) % 360;
       const assetOf = (p) => lib.asset ? lib.asset(String(p)) : p;
-      const load = async (url) => {
+      const load2 = async (url) => {
         const key2 = String(url);
         const im = await this.loadImage(key2);
         const name = lib.nameOf ? lib.nameOf(key2) : key2;
@@ -1954,7 +1954,7 @@
         }
         return c;
       };
-      return lib.createWhaleFigure(lib.base || new URL("./", location.href), { model: lib.model, asset: assetOf, loadImage: load, kit: { createRig: lib.createRig } });
+      return lib.createWhaleFigure(lib.base || new URL("./", location.href), { model: lib.model, asset: assetOf, loadImage: load2, kit: { createRig: lib.createRig } });
     }
   };
   var RigBody = class {
@@ -4878,7 +4878,7 @@
     { id: "map", icon: "🗺", label: "地图" },
     { id: "social", icon: "👥", label: "社区" }
   ];
-  var PAGE_TITLE = { story: "剧情", chat: "聊天", map: "家 · 地图", social: "社区", conn: "连接与状态", about: "关于" };
+  var PAGE_TITLE = { story: "剧情", chat: "聊天", map: "家 · 地图", social: "社区", town: "AI 小镇 · 帖子", conn: "连接与状态", about: "关于" };
   var STATUS_TEXT = { thinking: "思考中", working: "干活中", result: "整理结果", waiting: "等你回复", success: "完成啦", error: "出错了" };
   var OFFLINE_RULES = [
     [/睡|困|休息|晚安/, "sleep", ["好~ 那我去睡一会儿", "晚安，呼……"]],
@@ -4940,6 +4940,10 @@
         if (e.target && e.target.matches && e.target.matches(".rk-chat-in") && e.key === "Enter" && !e.isComposing) {
           e.preventDefault();
           this._sendChat();
+        }
+        if (e.target && e.target.matches && e.target.matches(".rk-town-in") && e.key === "Enter" && !e.isComposing) {
+          e.preventDefault();
+          this._townSay();
         }
         if (e.target && e.target.matches && e.target.matches("[data-menu-in]") && e.key === "Enter" && !e.isComposing) {
           e.preventDefault();
@@ -5235,6 +5239,7 @@
       else if (p === "map") this._renderMap();
       else if (p === "chat") this._renderChat();
       else if (p === "social") this._renderSocial();
+      else if (p === "town") this._renderTown();
       else if (p === "conn") this._renderConn();
       else if (p === "about") this._renderAbout();
     }
@@ -5372,14 +5377,64 @@
       this._chatBusy = false;
       if (this.chatLog.length > 60) this.chatLog.splice(0, this.chatLog.length - 60);
     }
+    /** 社区页里的 AI 小镇：连接、帖子列表、开新帖 */
+    _townSection() {
+      const town = this.app.town;
+      if (!town) return "";
+      const head = '<div class="rk-field">AI 小镇（本机原型）</div><div class="rk-hint" style="margin-top:0">一个帖子就是一个场景。角色进帖子后会自己回帖、在场景里做出反应；你也可以用角色的身份说话。</div>';
+      if (!town.online) {
+        return head + `<div class="rk-chat-bar"><input class="rk-town-url" type="text" value="${esc(town.url)}"><button class="rk-btn on" data-s="town-connect">连接</button></div>
+        ${town.error ? `<div class="rk-hint">${esc(town.error)}</div>` : '<div class="rk-hint">先在 dsh-room 目录运行 <code>npm run town</code>，小镇只在本机运行。</div>'}`;
+      }
+      const rows = town.threads.map((t) => `<div class="rk-kv rk-thread"><span><b>${esc(t.title)}</b><small>${t.here.length} 位在场 · ${t.posts} 条回帖${t.here.length ? " · " + esc(t.here.map((m) => m.name).join("、")) : ""}</small></span><button class="rk-btn${town.thread && town.thread.id === t.id ? " on" : ""}" data-town-enter="${esc(t.id)}">${town.thread && town.thread.id === t.id ? "在这里" : "进入"}</button></div>`).join("");
+      return head + rows + `<div class="rk-chat-bar" style="margin-top:8px"><input class="rk-town-title" type="text" maxlength="40" placeholder="新帖标题（用当前房间当场景）"><button class="rk-btn" data-s="town-new">开帖</button></div>`;
+    }
+    /** 帖子页：回帖记录 = 场景里发生的对话；输入框以我的角色身份发言 */
+    _renderTown() {
+      const town = this.app.town, t = town && town.thread;
+      if (!t) {
+        this.el.body.innerHTML = '<div class="rk-hint">还没进入任何帖子。去「社区」里选一个。</div>';
+        return;
+      }
+      const u = town.usage(), me = town.myAgent();
+      const keep = this.el.body.querySelector(".rk-town-in"), draft = keep ? keep.value : "", focused = keep && document.activeElement === keep;
+      this.el.body.innerHTML = `
+      <div class="rk-chat-who"><span class="rk-chat-head"><span><b>${esc(t.title)}</b></span><button class="rk-btn" data-s="town-leave">回家</button></span>
+        <small>在场：${esc((t.here || []).map((m) => m.name).join("、") || "只有你")}</small></div>
+      <label class="rk-check"><input type="checkbox" data-s="town-auto" ${town.auto ? "checked" : ""}>让${esc(me ? me.name : "我的角色")}自己回帖（这小时 ${u.used}/${u.max} 次${town.busy ? " · 正在想…" : ""}）</label>
+      <div class="rk-chat-log">${t.posts.length ? t.posts.map((p) => `<div class="rk-msg ${p.by && p.by.id === town.me ? "user" : "bot"}"><span><b>${esc(p.by ? p.by.name : "?")}</b>${p.human ? '<i class="rk-tag">主人代说</i>' : ""}：${esc(p.text)}${(p.acts || []).length ? " <small>[" + esc(p.acts.join(" ")) + "]</small>" : ""}</span></div>`).join("") : '<div class="rk-hint">还没人说话。等一会儿角色会自己开口，或者你先说一句。</div>'}</div>
+      <div class="rk-chat-bar"><input class="rk-town-in" type="text" maxlength="200" placeholder="以${esc(me ? me.name : "我的角色")}的身份说…"><button class="rk-btn on" data-s="town-say">发送</button></div>
+      ${town.error ? `<div class="rk-hint">${esc(town.error)}</div>` : ""}`;
+      const log = this.el.body.querySelector(".rk-chat-log");
+      log.scrollTop = log.scrollHeight;
+      const inp = this.el.body.querySelector(".rk-town-in");
+      inp.value = draft;
+      if (focused) inp.focus({ preventScroll: true });
+    }
+    async _townSay() {
+      const inp = this.el.body.querySelector(".rk-town-in"), text = inp && inp.value.trim();
+      if (!text) return;
+      inp.value = "";
+      try {
+        await this.app.town.say(text);
+      } catch (e) {
+        this.app.hud.toast("没发出去：" + e.message);
+      }
+    }
+    async _townDo(fn) {
+      try {
+        await fn();
+      } catch (e) {
+        this.app.hud.toast(e.message, 3e3);
+      }
+    }
     _renderSocial() {
       const app = this.app, items = app.ext && app.ext.social || [];
       this.el.body.innerHTML = `
       ${items.length ? `<div class="rk-field">在 DSH 里</div>${items.map((it) => `<label class="rk-check rk-opt"><input type="checkbox" data-social="${esc(it.id)}" ${it.on() ? "checked" : ""}><span><b>${esc(it.label)}</b><small>${esc(it.sub || "")}</small></span></label>`).join("")}` : ""}
       <div class="rk-field">这个房间里的角色（${app.agents.size}）</div>
       ${[...app.agents.values()].map((a) => `<div class="rk-kv"><span>${esc(a.name)}</span><span>${esc(a.status ? STATUS_TEXT[a.status.state] || a.status.state : a.activity || "")}</span></div>`).join("")}
-      <div class="rk-field">串门与社区</div>
-      <div class="rk-soon">🐋 多只大肥鱼互相串门、聊天<br>🧩 网友分享的家具 / 房间 / 剧情广场<br><small>规划中（见 docs/05 第六节）：本机多窗口同步 → 本地中继串门 → 公网社区。</small></div>`;
+      ${this._townSection()}`;
     }
     _renderConn() {
       this._diagAt = performance.now();
@@ -5429,7 +5484,7 @@
     _onClick(e) {
       const app = this.app;
       if (this.menu && !e.target.closest(".rk-menu") && !e.target.closest("[data-s=rooms],[data-s=more],[data-room-menu]")) this.closeMenu();
-      const t = e.target.closest && e.target.closest("[data-s],[data-page],[data-story],[data-sim],[data-social],[data-room],[data-room-menu],[data-menu],[data-map-open],[data-map-add],[data-map-tpl],[data-map-new],[data-add-floor],[data-door-go],[data-door-link],[data-door-toggle]");
+      const t = e.target.closest && e.target.closest("[data-s],[data-page],[data-story],[data-sim],[data-social],[data-town-enter],[data-room],[data-room-menu],[data-menu],[data-map-open],[data-map-add],[data-map-tpl],[data-map-new],[data-add-floor],[data-door-go],[data-door-link],[data-door-toggle]");
       if (!t || !app.root.contains(t)) return;
       if (t.hasAttribute("data-menu")) {
         this._onMenu(t);
@@ -5465,6 +5520,15 @@
           this.pendingStory = null;
           app.stories.run(s);
         }
+        return;
+      }
+      if (t.hasAttribute("data-town-enter")) {
+        const id = t.getAttribute("data-town-enter");
+        if (!(app.town.thread && app.town.thread.id === id)) this._townDo(async () => {
+          await app.town.enter(id);
+          this.open("town");
+        });
+        else this.open("town");
         return;
       }
       if (t.hasAttribute("data-sim")) {
@@ -5555,6 +5619,31 @@
         case "chat-send":
           this._sendChat();
           break;
+        case "town-connect": {
+          const u = this.el.body.querySelector(".rk-town-url");
+          this._townDo(() => app.town.connect(u && u.value.trim()));
+          return;
+        }
+        case "town-new": {
+          const i = this.el.body.querySelector(".rk-town-title");
+          this._townDo(async () => {
+            await app.town.create(i && i.value.trim());
+            this.open("town");
+          });
+          return;
+        }
+        case "town-leave":
+          this._townDo(async () => {
+            await app.town.leave();
+            this.open("social");
+          });
+          return;
+        case "town-say":
+          this._townSay();
+          return;
+        case "town-auto":
+          app.town.setAuto(!!t.checked);
+          return;
         case "chat-group":
           this.chatGroup = !this.chatGroup;
           this._renderChat();
@@ -8358,6 +8447,10 @@
 .rk-chat-in{flex:1;min-width:0;padding:7px 10px;border-radius:999px;border:1px solid var(--rk-line);background:transparent;color:inherit;font:inherit;user-select:text;-webkit-user-select:text}
 .rk-diag-row{display:grid;grid-template-columns:12px 64px 1fr;align-items:center;gap:6px;padding:5px 0;border-bottom:1px dashed var(--rk-line);font-size:12.5px}
 .rk-diag-row small{color:var(--rk-sub);font-size:11.5px;word-break:break-all}
+.rk-thread{align-items:center}
+.rk-thread span{display:flex;flex-direction:column}
+.rk-thread small{color:var(--rk-sub);font-size:11px}
+.rk-tag{font-style:normal;font-size:10px;margin-left:4px;padding:0 4px;border-radius:6px;background:rgba(127,140,170,.25)}
 .rk-soon{padding:10px;border-radius:10px;background:rgba(127,140,170,.08);font-size:12.5px;line-height:1.8}
 .rk-soon small{color:var(--rk-sub);line-height:1.5;display:block;margin-top:4px}
 
@@ -8507,6 +8600,252 @@
     if (doc === document) injected = true;
   }
 
+  // web/roomkit/town.js
+  var PREF = "roomkit.town";
+  var AUTO_PER_HOUR = 30;
+  var AI_STREAK = 10;
+  var IDLE_MS = 6e4;
+  var load = () => {
+    try {
+      return JSON.parse(localStorage.getItem(PREF)) || {};
+    } catch (e) {
+      return {};
+    }
+  };
+  var delay2 = (ms) => new Promise((r) => setTimeout(r, ms));
+  var rand2 = (a, b) => a + Math.random() * (b - a);
+  var Town = class {
+    constructor(app) {
+      this.app = app;
+      const p = load();
+      this.url = p.url || "http://127.0.0.1:18780";
+      this.me = p.me || uid("m").replace(/[^a-z0-9_-]/gi, "");
+      this.key = p.key || Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
+      this.auto = p.auto !== false;
+      this.stamps = (p.stamps || []).filter((t) => Date.now() - t < 36e5);
+      this.online = false;
+      this.error = "";
+      this.threads = [];
+      this.thread = null;
+      this.busy = false;
+      this._save();
+    }
+    _save() {
+      try {
+        localStorage.setItem(PREF, JSON.stringify({ url: this.url, me: this.me, key: this.key, auto: this.auto, stamps: this.stamps }));
+      } catch (e) {
+      }
+    }
+    _changed() {
+      const s = this.app.shell;
+      if (s && (s.page === "social" || s.page === "town")) s.render();
+    }
+    async call(ep, body) {
+      const r = await fetch(this.url + "/api/" + ep, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(Object.assign({ me: this.me, key: this.key }, body)) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || "HTTP " + r.status);
+      return d;
+    }
+    /** 主角：用她的名字和样子在小镇上露面 */
+    _self() {
+      const a = this.app.mainAgent(), d = a && a.data || {};
+      return { a, name: a && a.name || "大肥鱼", kind: d.kind || "girl", look: d.look || {}, character: d.character || null };
+    }
+    async connect(url) {
+      if (url) this.url = String(url).replace(/\/+$/, "");
+      this._save();
+      this.disconnect();
+      const s = this._self();
+      this.self = s;
+      try {
+        const r = await this.call("hello", { name: s.name, kind: s.kind, look: s.look });
+        this.threads = r.threads;
+        this.online = true;
+        this.error = "";
+      } catch (e) {
+        this.online = false;
+        this.error = e.message === "Failed to fetch" ? "连不上小镇（先运行 npm run town）" : e.message;
+        this._changed();
+        return false;
+      }
+      const es = this.es = new EventSource(this.url + "/events?me=" + encodeURIComponent(this.me));
+      es.addEventListener("threads", (e) => {
+        this.threads = JSON.parse(e.data).threads;
+        this._changed();
+      });
+      es.addEventListener("presence", (e) => {
+        const d = JSON.parse(e.data);
+        if (this.thread && d.thread === this.thread.id) {
+          this.thread.here = d.here;
+          this._cast();
+          this._changed();
+        }
+      });
+      es.addEventListener("post", (e) => {
+        const d = JSON.parse(e.data);
+        if (this.thread && d.thread === this.thread.id) this._onPost(d.post);
+      });
+      es.onerror = () => {
+        this.online = es.readyState === 1;
+        this._changed();
+      };
+      es.onopen = () => {
+        this.online = true;
+        if (this.thread) this.call("join", { thread: this.thread.id }).catch(() => {
+        });
+        this._changed();
+      };
+      this._changed();
+      return true;
+    }
+    disconnect() {
+      if (this.es) {
+        this.es.close();
+        this.es = null;
+      }
+      this.online = false;
+    }
+    /* ───────── 进出帖子（= 进出场景） ───────── */
+    async enter(id) {
+      const app = this.app;
+      if (this.thread) await this.leave(true);
+      const { thread } = await this.call("get", { thread: id });
+      let scene = thread.scene;
+      if (!scene) {
+        const p = app.packs.find((x) => (x.scenes || []).some((s) => s.id === thread.sceneRef));
+        scene = p && p.scenes.find((s) => s.id === thread.sceneRef);
+      }
+      if (!scene) throw new Error("这个帖子没有场景");
+      scene = clone(scene);
+      scene.id = "town-" + thread.id;
+      scene.name = thread.title;
+      scene.agents = [];
+      if (app.opts.autosave) app.storage.save(app.world.toJSON());
+      this.homeId = app.world.scene.id;
+      this._autosave = app.opts.autosave;
+      app.opts.autosave = false;
+      app.visiting = thread.id;
+      this.thread = { id: thread.id, title: thread.title, posts: thread.posts, here: thread.here };
+      await app.shell.curtain(true, "帖子 · " + thread.title);
+      app.openScene(scene, { followers: [] });
+      await app.shell.curtain(false);
+      await this.call("join", { thread: thread.id });
+      this._lastActivity = Date.now();
+      this._idle = setInterval(() => this._idleTick(), 15e3);
+      this._changed();
+    }
+    async leave(quiet) {
+      const app = this.app, t = this.thread;
+      if (!t) return;
+      clearInterval(this._idle);
+      this.thread = null;
+      this.call("leave", { thread: t.id }).catch(() => {
+      });
+      const home = app.home.sceneFor(this.homeId) || app.storage.load(this.homeId);
+      if (!quiet) await app.shell.curtain(true, "回家");
+      if (home) app.openScene(home, { followers: [] });
+      app.opts.autosave = this._autosave;
+      app.visiting = null;
+      if (!quiet) await app.shell.curtain(false);
+      this._changed();
+    }
+    async create(title) {
+      const app = this.app, s = app.world.toJSON();
+      const { thread } = await this.call("create", { title, scene: s });
+      await this.enter(thread.id);
+    }
+    /** 在场成员 ↔ 场景里的角色：来了从门口进，走了就消失 */
+    _cast() {
+      const app = this.app, t = this.thread;
+      if (!t) return;
+      const want = new Map((t.here || []).map((m) => ["tm_" + m.id, m]));
+      for (const a of [...app.agents.values()]) if (a.id.startsWith("tm_") && !want.has(a.id)) app.command({ op: "agent.remove", id: a.id });
+      for (const [id, m] of want) {
+        if (app.agents.has(id)) continue;
+        const mine = m.id === this.me;
+        app.command({ op: "agent.add", agent: { id, name: m.name, kind: m.kind, look: m.look, brain: "auto", ephemeral: true, character: mine ? this.self.character : void 0 } });
+        const a = app.agents.get(id);
+        if (a && !mine) a.say("来啦~", 2e3);
+      }
+    }
+    myAgent() {
+      return this.app.agents.get("tm_" + this.me) || null;
+    }
+    /* ───────── 回帖 ───────── */
+    _onPost(p) {
+      const app = this.app, t = this.thread;
+      t.posts.push(p);
+      if (t.posts.length > 200) t.posts.splice(0, t.posts.length - 200);
+      this._lastActivity = Date.now();
+      const mine = p.by && p.by.id === this.me;
+      const a = p.by && app.agents.get("tm_" + p.by.id);
+      if (a && (!mine || p.human)) {
+        if (p.text) a.say(p.text, Math.min(7e3, 1800 + p.text.length * 120));
+        if (!mine) app.applyActs(a, p.acts || []);
+      }
+      this._changed();
+      if (!mine) this._maybeReply();
+    }
+    /** 我用角色的身份说一句 */
+    async say(text) {
+      text = String(text || "").trim().slice(0, 200);
+      if (!text || !this.thread) return;
+      await this.call("post", { thread: this.thread.id, text, human: true });
+    }
+    _budget() {
+      this.stamps = this.stamps.filter((t) => Date.now() - t < 36e5);
+      return this.stamps.length < AUTO_PER_HOUR;
+    }
+    _aiStreak() {
+      let n = 0;
+      for (let i = this.thread.posts.length - 1; i >= 0 && !this.thread.posts[i].human; i--) n++;
+      return n;
+    }
+    async _maybeReply(opening) {
+      const t = this.thread;
+      if (!t || !this.auto || this.busy || !this._budget() || !this.myAgent()) return;
+      if (!opening && this._aiStreak() >= AI_STREAK && Math.random() < 0.8) return;
+      const others = (t.here || []).filter((m) => m.id !== this.me).length;
+      if (!opening && Math.random() > (others > 1 ? 0.6 : 0.9)) return;
+      this.busy = true;
+      try {
+        await delay2(rand2(2500, 6e3));
+        if (this.thread !== t) return;
+        const last = t.posts[t.posts.length - 1];
+        if (!opening && last && last.by && last.by.id === this.me) return;
+        const a = this.myAgent();
+        const history = t.posts.slice(-12).map((p) => ({ role: p.by && p.by.id === this.me ? "assistant" : "user", who: p.by ? p.by.name : "", text: p.text }));
+        const prompt2 = opening || !last ? "（帖子里安静了一会儿。你可以开个轻松的话题，或者招呼一下在场的人。）" : (last.by ? last.by.name + "：" : "") + last.text;
+        const res = await this.app.chat(a, prompt2, opening ? history : history.slice(0, -1), { thread: t.title });
+        if (this.thread !== t || !res || !res.text && !(res.acts || []).length) return;
+        this.stamps.push(Date.now());
+        this._save();
+        await this.call("post", { thread: t.id, text: res.text, acts: res.acts || [] });
+      } catch (e) {
+        this.error = e.message;
+        this._changed();
+      } finally {
+        this.busy = false;
+      }
+    }
+    _idleTick() {
+      if (!this.thread || Date.now() - this._lastActivity < IDLE_MS) return;
+      if (Math.random() < 0.35) {
+        this._lastActivity = Date.now();
+        this._maybeReply(true);
+      }
+    }
+    setAuto(on) {
+      this.auto = !!on;
+      this._save();
+      this._changed();
+    }
+    usage() {
+      this._budget();
+      return { used: this.stamps.length, max: AUTO_PER_HOUR };
+    }
+  };
+
   // web/roomkit/app.js
   function localStore(prefix = "roomkit") {
     const ls = (() => {
@@ -8615,6 +8954,7 @@
       this.editor = new Editor(this);
       this.soundOn = !!this.storage.pref("sound");
       this.shell = new Shell(this);
+      this.town = new Town(this);
       this.desk = this.opts.desk ? new Desk(this) : null;
       this._syncAgents(true);
       this.world.on("change", (e) => this._onChange(e));
@@ -9313,7 +9653,7 @@
       if (this.ext.chat) {
         const c = this.characterOf(a);
         try {
-          const r = await this.ext.chat({ agent: { id: a.id, name: a.name }, character: c ? { id: c.id, name: c.name, persona: c.persona || "", scenario: c.scenario || "" } : null, text, history: (history || []).map((m) => ({ role: m.role === "user" ? "user" : "assistant", text: m.who && m.who !== a.name ? m.who + "：" + m.text : m.text })), group: !!(opts && opts.group), room: this.describe() });
+          const r = await this.ext.chat({ agent: { id: a.id, name: a.name }, character: c ? { id: c.id, name: c.name, persona: c.persona || "", scenario: c.scenario || "" } : null, text, history: (history || []).map((m) => ({ role: m.role === "user" ? "user" : "assistant", text: m.who && m.who !== a.name ? m.who + "：" + m.text : m.text })), group: !!(opts && opts.group), thread: opts && opts.thread || "", room: this.describe() });
           if (r && r.text) {
             res = parseActs(r.text);
             if (Array.isArray(r.acts)) res.acts = res.acts.concat(r.acts);
@@ -9601,7 +9941,7 @@
     }
     /** 去家里的另一个房间：转场 + 跟随的角色一起过去 */
     async goRoom(id) {
-      if (!id || this._going || id === this.world.scene.id) return false;
+      if (!id || this._going || this.visiting || id === this.world.scene.id) return false;
       const scene = this.home.sceneFor(id) || this.storage.load(id);
       if (!scene || scene.id !== id) return false;
       this._going = true;
@@ -9715,8 +10055,8 @@
         chirp: [[880, 0.05, "sine", 0.05], [1320, 0.06, "sine", 0.04, 0.05]]
       }[name] || [[600, 0.05, "sine", 0.04]];
       const ac = this._ac, t0 = ac.currentTime;
-      for (const [f, d, type, g, delay2] of T) {
-        const o = ac.createOscillator(), gn = ac.createGain(), t = t0 + (delay2 || 0);
+      for (const [f, d, type, g, delay3] of T) {
+        const o = ac.createOscillator(), gn = ac.createGain(), t = t0 + (delay3 || 0);
         o.type = type;
         o.frequency.value = f;
         gn.gain.setValueAtTime(1e-4, t);

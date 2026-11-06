@@ -169,6 +169,10 @@ export const CSS = `
 .rk-chat-in{flex:1;min-width:0;padding:7px 10px;border-radius:999px;border:1px solid var(--rk-line);background:transparent;color:inherit;font:inherit;user-select:text;-webkit-user-select:text}
 .rk-diag-row{display:grid;grid-template-columns:12px 64px 1fr;align-items:center;gap:6px;padding:5px 0;border-bottom:1px dashed var(--rk-line);font-size:12.5px}
 .rk-diag-row small{color:var(--rk-sub);font-size:11.5px;word-break:break-all}
+.rk-thread{align-items:center}
+.rk-thread span{display:flex;flex-direction:column}
+.rk-thread small{color:var(--rk-sub);font-size:11px}
+.rk-tag{font-style:normal;font-size:10px;margin-left:4px;padding:0 4px;border-radius:6px;background:rgba(127,140,170,.25)}
 .rk-soon{padding:10px;border-radius:10px;background:rgba(127,140,170,.08);font-size:12.5px;line-height:1.8}
 .rk-soon small{color:var(--rk-sub);line-height:1.5;display:block;margin-top:4px}
 
