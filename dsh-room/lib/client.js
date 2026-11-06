@@ -5393,7 +5393,11 @@
       const acct = town.account ? `<div class="rk-kv"><span>已登录：<b>${esc(town.account.name || town.account.login || town.account.id)}</b> <small>${esc(town.account.id)}</small></span><a href="#" class="rk-link" data-s="town-logout">退出</a></div>` : "";
       const rows = town.threads.map((t) => `<div class="rk-kv rk-thread"><span><b>${esc(t.title)}</b><small>${t.here.length} 位在场 · ${t.posts} 条回帖${t.here.length ? " · " + esc(t.here.map((m) => m.name).join("、")) : ""}</small></span><button class="rk-btn${town.thread && town.thread.id === t.id ? " on" : ""}" data-town-enter="${esc(t.id)}">${town.thread && town.thread.id === t.id ? "在这里" : "进入"}</button></div>`).join("");
       const admin = town.roles().length ? `<button class="rk-btn" data-s="town-admin" style="margin-top:6px">🛡 管理（${esc(town.roles().map((r) => ({ owner: "站长", admin: "管理员", mod: "版主" })[r.role]).join("、"))}）</button>` : "";
-      return head + acct + rows + admin + `<div class="rk-chat-bar" style="margin-top:8px"><input class="rk-town-title" type="text" maxlength="40" placeholder="新帖标题（用当前房间当场景）"><button class="rk-btn" data-s="town-new">开帖</button></div>`;
+      const mem = town.memory(), ms = mem.stats(), open = this._memOpen, L = open ? mem.list() : null;
+      const memory = `<div class="rk-field">🧠 ${esc((town.myAgent() || town.self || {}).name || "她")}的记忆 <small>（存在这台电脑上，不上传）</small></div>
+      <div class="rk-kv"><span>认识 ${ms.people} 位 · 记了 ${ms.events} 件事</span><span><a href="#" class="rk-link" data-s="mem-toggle">${open ? "收起" : "查看"}</a> · <a href="#" class="rk-link" data-s="mem-export">导出</a> · <a href="#" class="rk-link" data-s="mem-import">导入</a> · <a href="#" class="rk-link" data-s="mem-clear">清空</a></span></div>
+      ${open ? L.people.map((p) => `<div class="rk-kv"><span><b>${esc(p.name)}</b> <small>见过 ${p.met} 次${p.impression ? " · " + esc(p.impression) : ""}</small></span><a href="#" class="rk-link" data-mem-forget="${esc(p.id)}">忘掉</a></div>`).join("") + L.events.slice(0, 10).map((e) => `<div class="rk-hint" style="margin:2px 0">「${esc(e.title)}」${esc(e.summary)}</div>`).join("") : ""}`;
+      return head + acct + rows + admin + memory + `<div class="rk-chat-bar" style="margin-top:8px"><input class="rk-town-title" type="text" maxlength="40" placeholder="新帖标题（用当前房间当场景）"><button class="rk-btn" data-s="town-new">开帖</button></div>`;
     }
     /** 帖子页：回帖记录 = 场景里发生的对话；输入框以我的角色身份发言 */
     _renderTown() {
@@ -5536,7 +5540,7 @@
     _onClick(e) {
       const app = this.app;
       if (this.menu && !e.target.closest(".rk-menu") && !e.target.closest("[data-s=rooms],[data-s=more],[data-room-menu]")) this.closeMenu();
-      const t = e.target.closest && e.target.closest("[data-s],[data-page],[data-story],[data-sim],[data-social],[data-town-enter],[data-town-login],[data-town-flag],[data-town-reason],[data-town-kick],[data-town-act],[data-room],[data-room-menu],[data-menu],[data-map-open],[data-map-add],[data-map-tpl],[data-map-new],[data-add-floor],[data-door-go],[data-door-link],[data-door-toggle]");
+      const t = e.target.closest && e.target.closest("[data-s],[data-page],[data-story],[data-sim],[data-social],[data-town-enter],[data-town-login],[data-mem-forget],[data-town-flag],[data-town-reason],[data-town-kick],[data-town-act],[data-room],[data-room-menu],[data-menu],[data-map-open],[data-map-add],[data-map-tpl],[data-map-new],[data-add-floor],[data-door-go],[data-door-link],[data-door-toggle]");
       if (!t || !app.root.contains(t)) return;
       if (t.hasAttribute("data-menu")) {
         this._onMenu(t);
@@ -5596,6 +5600,12 @@
       if (t.hasAttribute("data-town-act")) {
         e.preventDefault();
         this._townAdmin({ action: t.getAttribute("data-town-act"), target: t.getAttribute("data-target"), days: t.getAttribute("data-days") || void 0, role: t.getAttribute("data-role") || void 0, scope: t.getAttribute("data-scope") || void 0 });
+        return;
+      }
+      if (t.hasAttribute("data-mem-forget")) {
+        e.preventDefault();
+        app.town.memory().forget(t.getAttribute("data-mem-forget"));
+        this.render();
         return;
       }
       if (t.hasAttribute("data-town-login")) {
@@ -5721,6 +5731,46 @@
         case "town-say":
           this._townSay();
           return;
+        case "mem-toggle":
+          e.preventDefault();
+          this._memOpen = !this._memOpen;
+          this.render();
+          return;
+        case "mem-clear":
+          e.preventDefault();
+          if (confirm("清空她在小镇上的全部记忆？")) {
+            app.town.memory().clear();
+            this.render();
+          }
+          return;
+        case "mem-export": {
+          e.preventDefault();
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(new Blob([app.town.memory().export()], { type: "application/json" }));
+          a.download = "memory.json";
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          setTimeout(() => URL.revokeObjectURL(a.href), 2e3);
+          return;
+        }
+        case "mem-import": {
+          e.preventDefault();
+          const inp = document.createElement("input");
+          inp.type = "file";
+          inp.accept = ".json,application/json";
+          inp.onchange = async () => {
+            try {
+              app.town.memory().import(await inp.files[0].text());
+              app.hud.toast("记忆已导入");
+              this.render();
+            } catch (x) {
+              app.hud.toast("导入失败：" + x.message, 3e3);
+            }
+          };
+          inp.click();
+          return;
+        }
         case "town-logout":
           e.preventDefault();
           this._townDo(() => app.town.logout());
@@ -8709,6 +8759,96 @@
     if (doc === document) injected = true;
   }
 
+  // web/roomkit/memory.js
+  var MAX_EVENTS = 50;
+  var MAX_LINES = 3;
+  var MAX_RECALL = 600;
+  var Memory = class {
+    constructor(key2) {
+      this.key = "roomkit.memory." + key2;
+      this.data = this._load();
+    }
+    _load() {
+      try {
+        const d = JSON.parse(localStorage.getItem(this.key));
+        if (d && d.people && d.events) return d;
+      } catch (e) {
+      }
+      return { people: {}, events: [] };
+    }
+    _save() {
+      try {
+        localStorage.setItem(this.key, JSON.stringify(this.data));
+      } catch (e) {
+      }
+    }
+    /** 在帖子里碰到了谁（同一次进帖只算一次） */
+    meet(m, visit) {
+      const p = this.data.people[m.id] || (this.data.people[m.id] = { name: m.name, met: 0, last: 0, impression: "", lines: [] });
+      p.name = m.name;
+      if (!visit.met.has(m.id)) {
+        visit.met.add(m.id);
+        p.met++;
+        p.prev = p.last;
+      }
+      p.last = Date.now();
+      this._save();
+    }
+    /** 记下对方说的一句原话 */
+    heard(m, text) {
+      const p = this.data.people[m.id];
+      if (!p || !text) return;
+      p.lines.push(String(text).slice(0, 60));
+      if (p.lines.length > MAX_LINES) p.lines.splice(0, p.lines.length - MAX_LINES);
+      this._save();
+    }
+    remember(ev) {
+      this.data.events.push(Object.assign({ t: Date.now() }, ev));
+      if (this.data.events.length > MAX_EVENTS) this.data.events.splice(0, this.data.events.length - MAX_EVENTS);
+      for (const id of ev.ids || []) if (this.data.people[id] && ev.summary) this.data.people[id].impression = ev.summary.slice(0, 60);
+      this._save();
+    }
+    /** 给提示词用：在场的人我认不认识、上次聊了什么；这个帖子以前发生过什么 */
+    recall(here, threadId) {
+      const out = [];
+      for (const m of here) {
+        const p = this.data.people[m.id];
+        if (!p || !p.met) continue;
+        const days = Math.floor((Date.now() - (p.prev || p.last)) / 864e5);
+        out.push(`${p.name}：见过 ${p.met} 次${p.met > 1 ? "，上次" + (days < 1 ? "是今天" : "约 " + days + " 天前") : ""}${p.impression ? "；印象：" + p.impression : ""}`);
+      }
+      const ids = new Set(here.map((m) => m.id));
+      const evs = this.data.events.filter((e) => e.thread === threadId || (e.ids || []).some((id) => ids.has(id))).slice(-4);
+      for (const e of evs) out.push(`在「${e.title}」${e.with.length ? "和" + e.with.join("、") : ""}：${e.summary}`);
+      let s = out.join("\n");
+      if (s.length > MAX_RECALL) s = s.slice(s.length - MAX_RECALL);
+      return s;
+    }
+    stats() {
+      return { people: Object.keys(this.data.people).length, events: this.data.events.length };
+    }
+    list() {
+      return { people: Object.entries(this.data.people).map(([id, p]) => Object.assign({ id }, p)), events: this.data.events.slice().reverse() };
+    }
+    forget(id) {
+      delete this.data.people[id];
+      this._save();
+    }
+    clear() {
+      this.data = { people: {}, events: [] };
+      this._save();
+    }
+    export() {
+      return JSON.stringify(this.data, null, 2);
+    }
+    import(text) {
+      const d = JSON.parse(text);
+      if (!d || typeof d.people !== "object" || !Array.isArray(d.events)) throw new Error("不是记忆文件");
+      this.data = d;
+      this._save();
+    }
+  };
+
   // web/roomkit/town.js
   var PREF = "roomkit.town";
   var AUTO_PER_HOUR = 30;
@@ -8742,6 +8882,15 @@
       this.thread = null;
       this.busy = false;
       this._save();
+    }
+    /** 我这只角色的记忆（按小镇地址 + 角色分开） */
+    memory() {
+      const k = this.url.replace(/^https?:\/\//, "") + "|" + (this.me || "anon");
+      if (!this._mem || this._memKey !== k) {
+        this._mem = new Memory(k);
+        this._memKey = k;
+      }
+      return this._mem;
     }
     /** 我的角色 id：登录模式用服务器分配的，原型模式用本机生成的 */
     get me() {
@@ -8930,6 +9079,7 @@
       app.opts.autosave = false;
       app.visiting = thread.id;
       this.thread = { id: thread.id, title: thread.title, posts: thread.posts, here: thread.here };
+      this.visit = { met: /* @__PURE__ */ new Set(), from: thread.posts.length };
       await app.shell.curtain(true, "帖子 · " + thread.title);
       app.openScene(scene, { followers: [] });
       await app.shell.curtain(false);
@@ -8943,6 +9093,8 @@
       if (!t) return;
       clearInterval(this._idle);
       this.thread = null;
+      this._summarize(t).catch(() => {
+      });
       this.call("leave", { thread: t.id }).catch(() => {
       });
       const home = app.home.sceneFor(this.homeId) || app.storage.load(this.homeId);
@@ -8967,6 +9119,7 @@
       for (const [id, m] of want) {
         if (app.agents.has(id)) continue;
         const mine = m.id === this.me;
+        if (!mine && this.visit) this.memory().meet(m, this.visit);
         app.command({ op: "agent.add", agent: { id, name: m.name, kind: m.kind, look: m.look, brain: "auto", ephemeral: true, character: mine ? this.self.character : void 0 } });
         const a = app.agents.get(id);
         if (a && !mine) a.say("来啦~", 2e3);
@@ -8994,6 +9147,7 @@
         if (!mine) app.applyActs(a, p.acts || []);
       }
       this._changed();
+      if (!mine && p.by && p.text) this.memory().heard(p.by, p.text);
       if (!mine) this._maybeReply();
     }
     /** 我用角色的身份说一句 */
@@ -9026,7 +9180,7 @@
         const a = this.myAgent();
         const history = t.posts.slice(-12).map((p) => ({ role: p.by && p.by.id === this.me ? "assistant" : "user", who: p.by ? p.by.name : "", text: p.text }));
         const prompt2 = opening || !last ? "（帖子里安静了一会儿。你可以开个轻松的话题，或者招呼一下在场的人。）" : (last.by ? last.by.name + "：" : "") + last.text;
-        const res = await this.app.chat(a, prompt2, opening ? history : history.slice(0, -1), { thread: t.title });
+        const res = await this.app.chat(a, prompt2, opening ? history : history.slice(0, -1), { thread: t.title, memory: this.memory().recall((t.here || []).filter((m) => m.id !== this.me), t.id) });
         if (this.thread !== t || !res || !res.text && !(res.acts || []).length) return;
         this.stamps.push(Date.now());
         this._save();
@@ -9037,6 +9191,34 @@
       } finally {
         this.busy = false;
       }
+    }
+    /**
+     * 离开帖子：这次聊了什么记成一条。有模型就让她自己用一句话总结（一次模型调用，计入额度），
+     * 没有就记最后一句原话。没人说话、或只有我自己在，就不记。
+     */
+    async _summarize(t) {
+      const v = this.visit;
+      this.visit = null;
+      if (!v) return;
+      const posts = t.posts.slice(v.from).filter((p) => p.text);
+      const others = [...new Map(posts.filter((p) => p.by && p.by.id !== this.me).map((p) => [p.by.id, p.by.name])).entries()];
+      if (!posts.length || !others.length) return;
+      let summary = "";
+      const a = this.app.mainAgent();
+      if (this.app.ext.chat && a && this._budget()) {
+        const log = posts.slice(-16).map((p) => (p.by ? p.by.name : "?") + "：" + p.text).join("\n");
+        const res = await this.app.chat(a, "（刚才在帖子「" + t.title + "」里的对话：\n" + log + "\n请用一句话记下这次聊了什么、对谁有什么印象，写给以后的自己看，不超过 50 字，不要动作标记。）", [], { silent: true });
+        if (res && res.text && !res.note) {
+          summary = res.text.slice(0, 80);
+          this.stamps.push(Date.now());
+          this._save();
+        }
+      }
+      if (!summary) {
+        const last = posts[posts.length - 1];
+        summary = "聊了 " + posts.length + " 句，最后" + (last.by ? last.by.name : "") + "说「" + last.text.slice(0, 30) + "」";
+      }
+      this.memory().remember({ thread: t.id, title: t.title, ids: others.map((x) => x[0]), with: others.map((x) => x[1]), summary });
     }
     _idleTick() {
       if (!this.thread || Date.now() - this._lastActivity < IDLE_MS) return;
@@ -9890,7 +10072,7 @@
       if (this.ext.chat) {
         const c = this.characterOf(a);
         try {
-          const r = await this.ext.chat({ agent: { id: a.id, name: a.name }, character: c ? { id: c.id, name: c.name, persona: c.persona || "", scenario: c.scenario || "" } : null, text, history: (history || []).map((m) => ({ role: m.role === "user" ? "user" : "assistant", text: m.who && m.who !== a.name ? m.who + "：" + m.text : m.text })), group: !!(opts && opts.group), thread: opts && opts.thread || "", room: this.describe() });
+          const r = await this.ext.chat({ agent: { id: a.id, name: a.name }, character: c ? { id: c.id, name: c.name, persona: c.persona || "", scenario: c.scenario || "" } : null, text, history: (history || []).map((m) => ({ role: m.role === "user" ? "user" : "assistant", text: m.who && m.who !== a.name ? m.who + "：" + m.text : m.text })), group: !!(opts && opts.group), thread: opts && opts.thread || "", memory: opts && opts.memory || "", room: this.describe() });
           if (r && r.text) {
             res = parseActs(r.text);
             if (Array.isArray(r.acts)) res.acts = res.acts.concat(r.acts);
@@ -9900,6 +10082,7 @@
         }
         if (note) note = "模型暂时用不了（" + note + "），先用离线台词回你";
       }
+      if (!res && opts && opts.silent) return { text: "", acts: [], note: note || "没有模型" };
       if (!res) {
         const rule = OFFLINE_RULES.find((x) => x[0].test(text));
         res = rule ? { text: pick(rule[2]), acts: [rule[1]] } : { text: this.phrase(a, "chat") || this.phrase(a, "idle"), acts: [] };
@@ -9912,6 +10095,7 @@
         }
       }
       if (note) res.note = note;
+      if (opts && opts.silent) return res;
       if (res.text) a.say(res.text, Math.min(7e3, 1800 + res.text.length * 120));
       this.applyActs(a, res.acts || []);
       this.bus.emit("agent:chat", { id: a.id, user: text, reply: res.text, acts: res.acts || [] });

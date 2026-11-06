@@ -447,7 +447,11 @@ export class Shell {
     const acct = town.account ? `<div class="rk-kv"><span>已登录：<b>${esc(town.account.name || town.account.login || town.account.id)}</b> <small>${esc(town.account.id)}</small></span><a href="#" class="rk-link" data-s="town-logout">退出</a></div>` : '';
     const rows = town.threads.map((t) => `<div class="rk-kv rk-thread"><span><b>${esc(t.title)}</b><small>${t.here.length} 位在场 · ${t.posts} 条回帖${t.here.length ? ' · ' + esc(t.here.map((m) => m.name).join('、')) : ''}</small></span><button class="rk-btn${town.thread && town.thread.id === t.id ? ' on' : ''}" data-town-enter="${esc(t.id)}">${town.thread && town.thread.id === t.id ? '在这里' : '进入'}</button></div>`).join('');
     const admin = town.roles().length ? `<button class="rk-btn" data-s="town-admin" style="margin-top:6px">🛡 管理（${esc(town.roles().map((r) => ({ owner: '站长', admin: '管理员', mod: '版主' })[r.role]).join('、'))}）</button>` : '';
-    return head + acct + rows + admin + `<div class="rk-chat-bar" style="margin-top:8px"><input class="rk-town-title" type="text" maxlength="40" placeholder="新帖标题（用当前房间当场景）"><button class="rk-btn" data-s="town-new">开帖</button></div>`;
+    const mem = town.memory(), ms = mem.stats(), open = this._memOpen, L = open ? mem.list() : null;
+    const memory = `<div class="rk-field">🧠 ${esc((town.myAgent() || town.self || {}).name || '她')}的记忆 <small>（存在这台电脑上，不上传）</small></div>
+      <div class="rk-kv"><span>认识 ${ms.people} 位 · 记了 ${ms.events} 件事</span><span><a href="#" class="rk-link" data-s="mem-toggle">${open ? '收起' : '查看'}</a> · <a href="#" class="rk-link" data-s="mem-export">导出</a> · <a href="#" class="rk-link" data-s="mem-import">导入</a> · <a href="#" class="rk-link" data-s="mem-clear">清空</a></span></div>
+      ${open ? L.people.map((p) => `<div class="rk-kv"><span><b>${esc(p.name)}</b> <small>见过 ${p.met} 次${p.impression ? ' · ' + esc(p.impression) : ''}</small></span><a href="#" class="rk-link" data-mem-forget="${esc(p.id)}">忘掉</a></div>`).join('') + L.events.slice(0, 10).map((e) => `<div class="rk-hint" style="margin:2px 0">「${esc(e.title)}」${esc(e.summary)}</div>`).join('') : ''}`;
+    return head + acct + rows + admin + memory + `<div class="rk-chat-bar" style="margin-top:8px"><input class="rk-town-title" type="text" maxlength="40" placeholder="新帖标题（用当前房间当场景）"><button class="rk-btn" data-s="town-new">开帖</button></div>`;
   }
 
   /** 帖子页：回帖记录 = 场景里发生的对话；输入框以我的角色身份发言 */
@@ -576,7 +580,7 @@ export class Shell {
   _onClick(e) {
     const app = this.app;
     if (this.menu && !e.target.closest('.rk-menu') && !e.target.closest('[data-s=rooms],[data-s=more],[data-room-menu]')) this.closeMenu();
-    const t = e.target.closest && e.target.closest('[data-s],[data-page],[data-story],[data-sim],[data-social],[data-town-enter],[data-town-login],[data-town-flag],[data-town-reason],[data-town-kick],[data-town-act],[data-room],[data-room-menu],[data-menu],[data-map-open],[data-map-add],[data-map-tpl],[data-map-new],[data-add-floor],[data-door-go],[data-door-link],[data-door-toggle]');
+    const t = e.target.closest && e.target.closest('[data-s],[data-page],[data-story],[data-sim],[data-social],[data-town-enter],[data-town-login],[data-mem-forget],[data-town-flag],[data-town-reason],[data-town-kick],[data-town-act],[data-room],[data-room-menu],[data-menu],[data-map-open],[data-map-add],[data-map-tpl],[data-map-new],[data-add-floor],[data-door-go],[data-door-link],[data-door-toggle]');
     if (!t || !app.root.contains(t)) return;
     if (t.hasAttribute('data-menu')) { this._onMenu(t); return; }
     if (t.hasAttribute('data-room-menu')) { e.stopPropagation(); this.openMenu('room', t, t.getAttribute('data-room-menu')); return; }
@@ -604,6 +608,7 @@ export class Shell {
     }
     if (t.hasAttribute('data-town-kick')) { e.preventDefault(); this._townDo(() => app.town.kick(t.getAttribute('data-town-kick'))); return; }
     if (t.hasAttribute('data-town-act')) { e.preventDefault(); this._townAdmin({ action: t.getAttribute('data-town-act'), target: t.getAttribute('data-target'), days: t.getAttribute('data-days') || undefined, role: t.getAttribute('data-role') || undefined, scope: t.getAttribute('data-scope') || undefined }); return; }
+    if (t.hasAttribute('data-mem-forget')) { e.preventDefault(); app.town.memory().forget(t.getAttribute('data-mem-forget')); this.render(); return; }
     if (t.hasAttribute('data-town-login')) { this._townDo(() => app.town.login(t.getAttribute('data-town-login'))); return; }
     if (t.hasAttribute('data-town-enter')) { const id = t.getAttribute('data-town-enter'); if (!(app.town.thread && app.town.thread.id === id)) this._townDo(async () => { await app.town.enter(id); this.open('town'); }); else this.open('town'); return; }
     if (t.hasAttribute('data-sim')) { const v = t.getAttribute('data-sim'); app.setWorkStatus(v ? { state: v, task: v === 'working' ? '模拟任务：整理房间' : null } : null); this._diagAt = 0; return; }
@@ -639,6 +644,19 @@ export class Shell {
       case 'town-new': { const i = this.el.body.querySelector('.rk-town-title'); this._townDo(async () => { await app.town.create(i && i.value.trim()); this.open('town'); }); return; }
       case 'town-leave': this._townDo(async () => { await app.town.leave(); this.open('social'); }); return;
       case 'town-say': this._townSay(); return;
+      case 'mem-toggle': e.preventDefault(); this._memOpen = !this._memOpen; this.render(); return;
+      case 'mem-clear': e.preventDefault(); if (confirm('清空她在小镇上的全部记忆？')) { app.town.memory().clear(); this.render(); } return;
+      case 'mem-export': {
+        e.preventDefault();
+        const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([app.town.memory().export()], { type: 'application/json' })); a.download = 'memory.json';
+        document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); return;
+      }
+      case 'mem-import': {
+        e.preventDefault();
+        const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.json,application/json';
+        inp.onchange = async () => { try { app.town.memory().import(await inp.files[0].text()); app.hud.toast('记忆已导入'); this.render(); } catch (x) { app.hud.toast('导入失败：' + x.message, 3000); } };
+        inp.click(); return;
+      }
       case 'town-logout': e.preventDefault(); this._townDo(() => app.town.logout()); return;
       case 'town-admin': this.page === 'town-admin' ? this._renderTownAdmin() : this.open('town-admin'); return;
       case 'town-lock': { const info = app.town.threads.find((x) => app.town.thread && x.id === app.town.thread.id); this._townDo(() => app.town.lock(!(info && info.locked))); return; }

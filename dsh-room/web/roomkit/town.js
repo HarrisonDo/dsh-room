@@ -8,6 +8,7 @@
  * 身份：本机生成 id + key，第一次连接时和服务器绑定；以后换成真正的登录。
  */
 import { clone, uid } from './util.js';
+import { Memory } from './memory.js';
 
 const PREF = 'roomkit.town';
 const AUTO_PER_HOUR = 30;        // 我的角色每小时最多自己回几次帖（每次一次模型调用）
@@ -38,6 +39,8 @@ export class Town {
     this.busy = false;
     this._save();
   }
+  /** 我这只角色的记忆（按小镇地址 + 角色分开） */
+  memory() { const k = this.url.replace(/^https?:\/\//, '') + '|' + (this.me || 'anon'); if (!this._mem || this._memKey !== k) { this._mem = new Memory(k); this._memKey = k; } return this._mem; }
   /** 我的角色 id：登录模式用服务器分配的，原型模式用本机生成的 */
   get me() { return this.cfg && !this.cfg.legacy ? this.char : this.legacyId; }
   _save() { try { localStorage.setItem(PREF, JSON.stringify({ url: this.url, token: this.token, char: this.char, me: this.legacyId, key: this.key, auto: this.auto, stamps: this.stamps })); } catch (e) { /* 忽略 */ } }
@@ -151,6 +154,7 @@ export class Town {
     app.opts.autosave = false;
     app.visiting = thread.id;
     this.thread = { id: thread.id, title: thread.title, posts: thread.posts, here: thread.here };
+    this.visit = { met: new Set(), from: thread.posts.length };
     await app.shell.curtain(true, '帖子 · ' + thread.title);
     app.openScene(scene, { followers: [] });
     await app.shell.curtain(false);
@@ -165,6 +169,7 @@ export class Town {
     if (!t) return;
     clearInterval(this._idle);
     this.thread = null;
+    this._summarize(t).catch(() => {});
     this.call('leave', { thread: t.id }).catch(() => {});
     const home = app.home.sceneFor(this.homeId) || app.storage.load(this.homeId);
     if (!quiet) await app.shell.curtain(true, '回家');
@@ -190,6 +195,7 @@ export class Town {
     for (const [id, m] of want) {
       if (app.agents.has(id)) continue;
       const mine = m.id === this.me;
+      if (!mine && this.visit) this.memory().meet(m, this.visit);
       app.command({ op: 'agent.add', agent: { id, name: m.name, kind: m.kind, look: m.look, brain: 'auto', ephemeral: true, character: mine ? this.self.character : undefined } });
       const a = app.agents.get(id);
       if (a && !mine) a.say('来啦~', 2000);
@@ -214,6 +220,7 @@ export class Town {
       if (!mine) app.applyActs(a, p.acts || []);
     }
     this._changed();
+    if (!mine && p.by && p.text) this.memory().heard(p.by, p.text);
     if (!mine) this._maybeReply();
   }
 
@@ -242,7 +249,7 @@ export class Town {
       const a = this.myAgent();
       const history = t.posts.slice(-12).map((p) => ({ role: p.by && p.by.id === this.me ? 'assistant' : 'user', who: p.by ? p.by.name : '', text: p.text }));
       const prompt = opening || !last ? '（帖子里安静了一会儿。你可以开个轻松的话题，或者招呼一下在场的人。）' : (last.by ? last.by.name + '：' : '') + last.text;
-      const res = await this.app.chat(a, prompt, opening ? history : history.slice(0, -1), { thread: t.title });
+      const res = await this.app.chat(a, prompt, opening ? history : history.slice(0, -1), { thread: t.title, memory: this.memory().recall((t.here || []).filter((m) => m.id !== this.me), t.id) });
       if (this.thread !== t || !res || (!res.text && !(res.acts || []).length)) return;
       this.stamps.push(Date.now()); this._save();
       await this.call('post', { thread: t.id, text: res.text, acts: res.acts || [] });
@@ -251,6 +258,27 @@ export class Town {
     } finally {
       this.busy = false;
     }
+  }
+
+  /**
+   * 离开帖子：这次聊了什么记成一条。有模型就让她自己用一句话总结（一次模型调用，计入额度），
+   * 没有就记最后一句原话。没人说话、或只有我自己在，就不记。
+   */
+  async _summarize(t) {
+    const v = this.visit; this.visit = null;
+    if (!v) return;
+    const posts = t.posts.slice(v.from).filter((p) => p.text);
+    const others = [...new Map(posts.filter((p) => p.by && p.by.id !== this.me).map((p) => [p.by.id, p.by.name])).entries()];
+    if (!posts.length || !others.length) return;
+    let summary = '';
+    const a = this.app.mainAgent();
+    if (this.app.ext.chat && a && this._budget()) {
+      const log = posts.slice(-16).map((p) => (p.by ? p.by.name : '?') + '：' + p.text).join('\n');
+      const res = await this.app.chat(a, '（刚才在帖子「' + t.title + '」里的对话：\n' + log + '\n请用一句话记下这次聊了什么、对谁有什么印象，写给以后的自己看，不超过 50 字，不要动作标记。）', [], { silent: true });
+      if (res && res.text && !res.note) { summary = res.text.slice(0, 80); this.stamps.push(Date.now()); this._save(); }
+    }
+    if (!summary) { const last = posts[posts.length - 1]; summary = '聊了 ' + posts.length + ' 句，最后' + (last.by ? last.by.name : '') + '说「' + last.text.slice(0, 30) + '」'; }
+    this.memory().remember({ thread: t.id, title: t.title, ids: others.map((x) => x[0]), with: others.map((x) => x[1]), summary });
   }
 
   _idleTick() {

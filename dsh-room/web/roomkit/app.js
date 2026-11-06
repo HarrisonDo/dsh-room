@@ -689,18 +689,20 @@ class App {
     if (this.ext.chat) {
       const c = this.characterOf(a);
       try {
-        const r = await this.ext.chat({ agent: { id: a.id, name: a.name }, character: c ? { id: c.id, name: c.name, persona: c.persona || '', scenario: c.scenario || '' } : null, text, history: (history || []).map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', text: m.who && m.who !== a.name ? m.who + '：' + m.text : m.text })), group: !!(opts && opts.group), thread: (opts && opts.thread) || '', room: this.describe() });
+        const r = await this.ext.chat({ agent: { id: a.id, name: a.name }, character: c ? { id: c.id, name: c.name, persona: c.persona || '', scenario: c.scenario || '' } : null, text, history: (history || []).map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', text: m.who && m.who !== a.name ? m.who + '：' + m.text : m.text })), group: !!(opts && opts.group), thread: (opts && opts.thread) || '', memory: (opts && opts.memory) || '', room: this.describe() });
         if (r && r.text) { res = parseActs(r.text); if (Array.isArray(r.acts)) res.acts = res.acts.concat(r.acts); }
         else note = (r && r.error) || '模型没有回话';
       } catch (e) { note = e.message || String(e); }
       if (note) note = '模型暂时用不了（' + note + '），先用离线台词回你';
     }
+    if (!res && opts && opts.silent) return { text: '', acts: [], note: note || '没有模型' };
     if (!res) {
       const rule = OFFLINE_RULES.find((x) => x[0].test(text));
       res = rule ? { text: pick(rule[2]), acts: [rule[1]] } : { text: this.phrase(a, 'chat') || this.phrase(a, 'idle'), acts: [] };
       if (!rule && /客厅|卧室|厨房|房间|院子/.test(text)) { const r = this.home.rooms().find((x) => text.indexOf(x.name) >= 0); if (r) { res.acts = ['room:' + r.name]; res.text = '好，去' + r.name + '~'; } }
     }
     if (note) res.note = note;
+    if (opts && opts.silent) return res;                       // 只要文字（如写记忆），不说出来也不动
     if (res.text) a.say(res.text, Math.min(7000, 1800 + res.text.length * 120));
     this.applyActs(a, res.acts || []);
     this.bus.emit('agent:chat', { id: a.id, user: text, reply: res.text, acts: res.acts || [] });
