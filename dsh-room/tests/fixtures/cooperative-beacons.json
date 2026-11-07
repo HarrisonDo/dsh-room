@@ -1,0 +1,139 @@
+{
+  "worldRelease": {
+    "format": "roomkit.world",
+    "v": 1,
+    "worldId": "courtyard-world",
+    "revision": 1,
+    "title": "合作点亮庭院",
+    "authorAccountId": "account-aya",
+    "protocol": "roomkit.session/1",
+    "scene": {
+      "format": "roomkit.scene",
+      "v": 2,
+      "id": "courtyard-scene",
+      "name": "庭院",
+      "room": {
+        "w": 5,
+        "h": 4,
+        "cells": null,
+        "mats": [{ "kind": "wood", "color": "#e3a46a" }],
+        "walls": {
+          "left": false,
+          "right": false,
+          "height": 230,
+          "color": "#f6ead6",
+          "wainscot": "#8fb0c9",
+          "trim": "#ffffff",
+          "pattern": "plain"
+        },
+        "slab": 16
+      },
+      "objects": [
+        { "id": "beacon-west", "def": "courtyard/beacon", "x": 0, "y": 0, "rot": 0, "state": { "on": false } },
+        { "id": "beacon-center", "def": "courtyard/beacon", "x": 2, "y": 0, "rot": 0, "state": { "on": false } },
+        { "id": "beacon-east", "def": "courtyard/beacon", "x": 4, "y": 0, "rot": 0, "state": { "on": false } },
+        { "id": "exit", "def": "courtyard/gate", "x": 4, "y": 3, "rot": 0, "state": { "open": false } }
+      ],
+      "agents": [],
+      "env": { "period": null, "weather": "clear" }
+    },
+    "dependencies": [
+      {
+        "id": "courtyard",
+        "version": "1.0.0",
+        "hash": "3033c70035e648cdec98391ede8d98d7367eaac14d1bae9ea78baef37d792cf3",
+        "source": "embedded"
+      }
+    ],
+    "packs": [
+      {
+        "format": "roomkit.pack",
+        "v": 1,
+        "id": "courtyard",
+        "name": "庭院道具",
+        "author": "RoomKit",
+        "version": "1.0.0",
+        "license": "AGPL-3.0-only",
+        "furniture": [
+          {
+            "id": "beacon",
+            "name": "信标",
+            "mount": "floor",
+            "size": [1, 1],
+            "height": 44,
+            "art": { "kind": "proc", "parts": [{ "t": "cyl", "x": 0.5, "y": 0.5, "z": 0, "r": 0.2, "h": 44, "c": "#64a4ac" }] },
+            "slots": [{ "id": "use", "at": [0.5, 1.5], "face": [0, -1] }],
+            "states": { "on": false },
+            "light": { "when": "on", "z": 44 }
+          },
+          {
+            "id": "gate",
+            "name": "出口",
+            "mount": "floor",
+            "size": [1, 1],
+            "height": 68,
+            "art": { "kind": "proc", "parts": [{ "t": "box", "x": 0.15, "y": 0.35, "z": 0, "w": 0.7, "d": 0.3, "h": 68, "c": "#8d6b4d", "when": "!open" }] },
+            "slots": [{ "id": "use", "at": [0.5, -0.5], "face": [0, 1] }],
+            "states": { "open": false }
+          }
+        ]
+      }
+    ],
+    "activity": {
+      "kind": "cooperative-beacons",
+      "v": 1,
+      "beaconIds": ["beacon-west", "beacon-center", "beacon-east"],
+      "exitId": "exit",
+      "minContributors": 2
+    },
+    "hash": "b42a8c727d62972f206e194b54b50baaaadc528a3fcb69f16f97a6a592b6bc7a"
+  },
+  "participants": [
+    { "sessionId": "courtyard-session", "accountId": "account-aya", "characterId": "character-aya", "name": "阿芽" },
+    { "sessionId": "courtyard-session", "accountId": "account-bo", "characterId": "character-bo", "name": "小波" }
+  ],
+  "completionEvent": {
+    "sessionId": "courtyard-session",
+    "epoch": 1,
+    "seq": 8,
+    "type": "activity.completed",
+    "actorCharacterId": "character-bo",
+    "payload": {
+      "worldId": "courtyard-world",
+      "revision": 1,
+      "completionId": "courtyard-completion",
+      "exitId": "exit",
+      "participants": [
+        { "characterId": "character-aya", "name": "阿芽" },
+        { "characterId": "character-bo", "name": "小波" }
+      ],
+      "contributions": [
+        { "beaconId": "beacon-west", "characterId": "character-aya" },
+        { "beaconId": "beacon-center", "characterId": "character-bo" },
+        { "beaconId": "beacon-east", "characterId": "character-aya" }
+      ]
+    },
+    "at": 1794002400000
+  },
+  "experience": {
+    "v": 1,
+    "id": "courtyard-completion",
+    "localCharacterId": "local-aya",
+    "source": {
+      "serviceId": "https://roomkit.example",
+      "worldId": "courtyard-world",
+      "revision": 1,
+      "sessionId": "courtyard-session",
+      "completionSeq": 8
+    },
+    "participants": [
+      { "characterId": "character-aya", "name": "阿芽" },
+      { "characterId": "character-bo", "name": "小波" }
+    ],
+    "facts": [{ "seq": 8, "type": "activity.completed", "payload": { "exitId": "exit" } }],
+    "outcome": "completed",
+    "reflection": { "text": "", "status": "pending" },
+    "createdAt": 1794002400000,
+    "updatedAt": 1794002400000
+  }
+}
