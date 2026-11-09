@@ -6,6 +6,7 @@ dsh-room/site/
 .env.*
 *.log
 artifacts/
+.diagnostics/
 test-results/
 .claude/cache/
 .claude/settings.local.json
