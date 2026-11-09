@@ -270,7 +270,8 @@ export class PackStore {
       tx.onerror = () => rej(tx.error);
     });
   }
-  list() { return this._tx('readonly', (st) => st.getAll()).then((r) => r || []).catch(() => []); }
+  listStrict() { return this._tx('readonly', (st) => st.getAll()).then((r) => r || []); }
+  list() { return this.listStrict().catch(() => []); }
   get(id) { return this._tx('readonly', (st) => st.get(id)).catch(() => null); }
   put(pack) { return this._tx('readwrite', (st) => st.put(pack)); }
   remove(id) { return this._tx('readwrite', (st) => st.delete(id)); }

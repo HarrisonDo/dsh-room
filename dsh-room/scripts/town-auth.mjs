@@ -13,6 +13,7 @@
  *           GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET
  *           LINUXDO_CLIENT_ID / LINUXDO_CLIENT_SECRET / LINUXDO_MIN_TRUST（最低信任等级，默认 0）
  *           TOWN_DEV_LOGIN=1（只在本机地址下生效：随便填个名字就能登录，测试用）
+ *           TOWN_REGISTRATION=0（暂停新账号注册；已有账号照常登录）
  */
 import crypto from 'node:crypto';
 
@@ -51,6 +52,7 @@ export function authConfig(env = process.env) {
     // 公网地址上永远不开（忘了配登录也不会变成谁都能冒充）
     legacy: local && (env.TOWN_LEGACY ? env.TOWN_LEGACY === '1' : !Object.keys(providers).length),
     owners: String(env.TOWN_OWNER || '').split(',').map((s) => s.trim()).filter(Boolean),
+    registration: env.TOWN_REGISTRATION !== '0',
   };
 }
 
@@ -119,7 +121,9 @@ export function createAuth({ config, store, onAccount, fetchImpl, now = Date.now
             if ((profile.trust || 0) < c.minTrust) return fail(st.nonce, `需要 linux.do 信任等级 ${c.minTrust} 以上`);
           }
         }
-        const account = store.upsertAccount({ id: (provider === 'dev' ? 'dev' : PROVIDERS[provider].prefix) + ':' + profile.uid, provider, login: profile.login, name: profile.name, avatar: profile.avatar });
+        const id = (provider === 'dev' ? 'dev' : PROVIDERS[provider].prefix) + ':' + profile.uid;
+        if (config.registration === false && !store.account(id)) return fail(st.nonce, '暂未开放新账号注册，已有账号可以照常登录');
+        const account = store.upsertAccount({ id, provider, login: profile.login, name: profile.name, avatar: profile.avatar });
         if (onAccount) onAccount(account);
         finish(st.nonce, account);
         return page('登录成功', '可以关掉这个窗口，回到房间了');

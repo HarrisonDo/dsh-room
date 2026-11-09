@@ -1,7 +1,7 @@
 # 域名来自 .env 的 TOWN_DOMAIN；Caddy 自动申请和续期 HTTPS 证书。
 {$TOWN_DOMAIN} {
 	encode gzip
-	# SSE（/events）要立即转发，不能缓冲
+	# 旧小镇和世界场次的 SSE（/events、/world-events）均立即转发
 	reverse_proxy town:18780 {
 		flush_interval -1
 	}

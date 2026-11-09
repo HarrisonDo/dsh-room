@@ -149,6 +149,7 @@ export class Stories {
   }
 
   async run(story, ctx = {}) {
+    if (this.app.worldSession?.id) return false;
     if (this.active) return false;
     const app = this.app, D = app.director, dlg = app.dialog;
     this.active = story;

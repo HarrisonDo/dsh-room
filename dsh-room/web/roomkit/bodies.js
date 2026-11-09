@@ -9,6 +9,7 @@
  */
 import { paintGirl, GIRL_H } from './paint-girl.js';
 import { paintWhale } from './paint-whale.js';
+import { TokenBody } from './token-body.js';
 import { hexToRgb } from './util.js';
 
 export class GirlBody {
@@ -53,9 +54,42 @@ export class RigPool {
     this.max = app.opts.rigMax != null ? app.opts.rigMax : 6;
     this.used = new Set();
     this.images = new Map();
+    this.schemes = new Map();
     this.host = null;
   }
-  get available() { return !!this.lib && this.used.size < this.max && !this.broken; }
+  get available() { return Boolean(this.lib || this.app.opts.rigLooks?.length) && this.used.size < this.max && !this.broken; }
+
+  loadRuntime() {
+    if (this.lib) return Promise.resolve(this.lib);
+    this.runtime ||= new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = '/assets/whale-showcase-rig.js';
+      script.onload = () => {
+        if (window.RoomKitRig) resolve(this.lib = window.RoomKitRig);
+        else reject(new Error('分件模型未加载'));
+      };
+      script.onerror = () => reject(new Error('分件模型未加载'));
+      document.head.appendChild(script);
+    }).catch(error => {
+      this.runtime = null;
+      throw error;
+    });
+    return this.runtime;
+  }
+
+  loadScheme(scheme) {
+    if (!scheme || !this.app.opts.rigLooks?.includes(scheme)) return null;
+    if (!this.schemes.has(scheme)) {
+      this.schemes.set(scheme, fetch(`/assets/whale-scheme-${scheme}.json`).then(response => {
+        if (!response.ok) throw new Error('分件配色未加载');
+        return response.json();
+      }).catch(error => {
+        this.schemes.delete(scheme);
+        throw error;
+      }));
+    }
+    return this.schemes.get(scheme);
+  }
 
   ensureHost() {
     if (this.host) return this.host;
@@ -77,10 +111,11 @@ export class RigPool {
   }
 
   /** 给一只角色建 figure：hue 非 0 时，头发/衣服这些部件的贴图先偏色（结果缓存，几只同色只算一次） */
-  figure(look) {
-    const lib = this.lib, hue = Math.round(look.body ? hueOf(look.body) - BASE_HUE : 0);
+  async figure(look) {
+    const [lib, textures] = await Promise.all([this.loadRuntime(), this.loadScheme(look.rigScheme)]);
+    const hue = Math.round(look.body ? hueOf(look.body) - BASE_HUE : 0);
     const shift = ((hue % 360) + 360) % 360;
-    const assetOf = (p) => (lib.asset ? lib.asset(String(p)) : p);
+    const assetOf = (p) => textures?.[p] || (lib.asset ? lib.asset(String(p)) : p);
     const load = async (url) => {
       const key = String(url);
       const im = await this.loadImage(key);
@@ -98,7 +133,7 @@ export class RigPool {
       }
       return c;
     };
-    return lib.createWhaleFigure(lib.base || new URL('./', location.href), { model: lib.model, asset: assetOf, loadImage: load, kit: { createRig: lib.createRig } });
+    return lib.createWhaleFigure(lib.base || new URL('./', location.href), { model: lib.model, scheme: look.rigScheme, asset: assetOf, loadImage: load, kit: { createRig: lib.createRig } });
   }
 }
 
@@ -129,7 +164,7 @@ export class RigBody {
 
   _fail(e) {
     console.warn('[roomkit] 真模型不可用，改用 Q 版角色:', e && e.message);
-    this.pool.broken = true;
+    if (!this.app.opts.rigLooks) this.pool.broken = true;
     this.pool.used.delete(this);
     this.ctl = null;
   }
@@ -257,7 +292,10 @@ export class RigBody {
 /** 给角色选身体：看 look.kind，真模型有名额就用真模型 */
 export function bodyFor(agent, app) {
   const kind = agent.data.kind || 'girl';
+  if ((app.opts?.neutral && !app.opts?.rigLooks) || kind === 'token') return new TokenBody(agent);
   if (kind === 'whale') return new WhaleBody(agent);
-  if (kind === 'girl' && agent.look.rig !== false && app.rig && app.rig.available) return new RigBody(agent, app);
+  const rig = app.opts?.site ? agent.look.rig === true : agent.look.rig !== false;
+  if (kind === 'girl' && rig && app.rig?.available) return new RigBody(agent, app);
+  if (kind !== 'girl' && app.opts?.site) return new TokenBody(agent);
   return new GirlBody(agent);
 }

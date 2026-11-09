@@ -14,7 +14,7 @@ export class HUD {
       <div class="rk-bubbles"></div>
       <div class="rk-tip"></div>
       <div class="rk-card"><button class="rk-x" data-a="close-card">×</button><div class="rk-card-body"></div></div>
-      <div class="rk-drawer"><button class="rk-x" data-a="close-drawer">×</button><div class="rk-drawer-body"></div></div>
+      <div class="rk-drawer"><button class="rk-x" data-a="close-drawer" aria-label="关闭">×</button><div class="rk-drawer-body"></div></div>
       <div class="rk-toast"></div>`);
     const $ = (s) => root.querySelector(s);
     this.el = {
@@ -25,6 +25,9 @@ export class HUD {
     this.cardAgent = null;
     this._cardAt = 0;
     root.addEventListener('click', (e) => this._onClick(e));
+    root.addEventListener('pointerdown', (e) => {
+      if (this.drawerAnchor && !this.el.drawer.contains(e.target)) this.closeDrawer();
+    }, true);
   }
 
   _onClick(e) {
@@ -72,6 +75,7 @@ export class HUD {
     }
     // 角色卡片半秒刷一次
     if (this.cardAgent && performance.now() - this._cardAt > 500) this._renderCard();
+    if (this.drawerAnchor) this._positionDrawer();
   }
 
   showTip(hit, text, sub) {
@@ -134,12 +138,39 @@ export class HUD {
 
   openDrawer(data) {
     this.closeCard();
+    this.drawerAnchor = data.anchor || null;
+    this.el.drawer.classList.toggle('rk-object-menu', !!this.drawerAnchor);
+    this.el.drawer.style.cssText = '';
+    this.el.drawerBody.style.maxHeight = '';
+    this.el.drawer.setAttribute('role', 'dialog');
+    this.el.drawer.setAttribute('aria-label', data.title);
     const lines = (data.lines || []).map((l) => Array.isArray(l)
       ? `<div class="rk-kv"><span>${esc(l[0])}</span><span>${esc(l[1])}</span></div>`
       : `<div class="rk-kv"><span>${esc(l)}</span></div>`).join('');
     const links = (data.links || []).map((l) => `<button class="rk-btn" data-a="goto:${esc(l.obj)}">${esc(l.label)} →</button>`).join('');
     this.el.drawerBody.innerHTML = `<h4>${esc(data.title)}</h4><div class="rk-sub">${esc(data.sub || '')}</div>${data.html || lines}${links ? '<div class="rk-row">' + links + '</div>' : ''}`;
     this.el.drawer.classList.add('on');
+    if (this.drawerAnchor) {
+      this._positionDrawer();
+      this.el.drawer.tabIndex = -1;
+      this.el.drawer.focus({ preventScroll: true });
+    }
   }
-  closeDrawer() { this.el.drawer.classList.remove('on'); }
+  _positionDrawer() {
+    const R = this.app.renderer, el = this.el.drawer, p = R.anchorOf(this.drawerAnchor);
+    if (!p || !this.app.world.byId.has(this.drawerAnchor.id)) { this.closeDrawer(); return; }
+    const margin = 8, top = this.app.desk ? margin : 48, bottom = this.app.desk ? margin : 62;
+    const maxHeight = Math.max(80, R.vh - top - bottom);
+    el.style.maxHeight = maxHeight + 'px';
+    this.el.drawerBody.style.maxHeight = (maxHeight - 22) + 'px';
+    const w = el.offsetWidth, h = el.offsetHeight;
+    const left = Math.max(margin, Math.min(p.x - w / 2, R.vw - w - margin));
+    const above = p.y - h - 12 >= top;
+    const y = above ? p.y - h - 12 : p.y + 18;
+    el.style.left = left + 'px';
+    el.style.top = Math.max(top, Math.min(y, R.vh - h - bottom)) + 'px';
+    el.style.setProperty('--rk-tail-x', Math.max(18, Math.min(w - 18, p.x - left)) + 'px');
+    el.classList.toggle('rk-menu-below', !above);
+  }
+  closeDrawer() { this.drawerAnchor = null; this.el.drawer.classList.remove('on'); }
 }

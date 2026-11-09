@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>创作指南 · RoomKit</title>
+<style>
+  body { margin: 0; background: #f5f8fc; color: #2c3550; font: 16px/1.75 system-ui, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  main { max-width: 42rem; margin: 0 auto; padding: 40px 20px 80px; }
+  h1 { font-size: 1.6rem; margin: 0 0 .25em; } h2 { font-size: 1.1rem; margin: 2em 0 .4em; }
+  a { color: #3b6fd8; } code, pre { font: 13px/1.6 ui-monospace, Menlo, monospace; background: #e9eff7; border-radius: 6px; }
+  code { padding: .1em .35em; } pre { padding: 12px 14px; overflow: auto; }
+  nav { font-size: 14px; margin-bottom: 1.5em; }
+</style>
+</head>
+<body>
+<main>
+<nav><a href="/">← 回到小屋</a> · <a href="https://github.com/HarrisonDo/dsh-room">共建仓库</a> · <a href="https://github.com/HarrisonDo/dsh-room/issues">问题反馈</a></nav>
+<h1>创作指南</h1>
+<p>不用安装任何东西。下面的内容都在网页里完成，布置结果先保存在这个浏览器。</p>
+
+<h2 id="five-minutes">五分钟布置</h2>
+<ol>
+<li>点底部的「布置」。</li>
+<li>从下方家具栏把一件家具拖进房间，放开即可。</li>
+<li>选中家具后可以旋转、换颜色或删除。</li>
+<li>点「家」回到游玩，刚才的改动已经自动保存。</li>
+</ol>
+
+<h2 id="doors">连接房门</h2>
+<p>游玩时右键房门（手机上长按），在门旁的气泡里选择通往哪个房间。连接好以后，左键点门就会直接过去。</p>
+
+<h2 id="furniture">家具的占地和交互位</h2>
+<p>家具用 <code>size</code> 声明占几格，用 <code>slots</code> 声明角色站或坐的位置，<code>at</code> 以家具左上角为原点，单位是格。</p>
+<pre>{ "id": "stool", "name": "小凳子", "size": [1, 1], "height": 40,
+  "art": { "kind": "proc", "parts": [{ "t": "cyl", "x": 0.5, "y": 0.5, "z": 0, "r": 0.3, "h": 40, "c": "#e3a46a" }] },
+  "slots": [{ "id": "sit", "pose": "sit", "at": [0.5, 0.5], "z": 42, "face": [0, 1], "label": "坐一会儿" }] }</pre>
+
+<h2 id="export">导入和导出</h2>
+<p>在「布置」的工具栏里可以导出当前房间，或导入内容包。清除浏览器数据会删掉本地房间，重要的布置请先导出。</p>
+
+<h2 id="ai">让 AI 帮你改</h2>
+<p>把导出的房间 JSON 和上面的家具格式一起交给 AI，让它返回同样结构的 JSON，再用「导入」载入。导入时会校验格式，出错会指出具体字段。导入只影响你自己的本地房间，公开分享需要你另外操作。</p>
+
+<h2 id="install">桌面版与 DSH 插件</h2>
+<p>网页试玩可直接进入小屋看 Q 版鲸鱼娘。已有 Harness 的用户可下载 DSH 插件，用自己选好的模型和角色聊天。<a href="/assets/dsh-install.html">DSH 安装与下载</a></p>
+<!-- ROOMKIT_SITE_SOURCE -->
+</main>
+</body>
+</html>

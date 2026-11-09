@@ -9,21 +9,24 @@
  */
 import { clone, uid } from './util.js';
 import { Memory } from './memory.js';
+import { publicLook } from '../../shared/public-appearance.js';
 
 const PREF = 'roomkit.town';
 const AUTO_PER_HOUR = 30;        // 我的角色每小时最多自己回几次帖（每次一次模型调用）
 const AI_STREAK = 10;            // 连续这么多条都是 AI 说的，就放慢，等有人插话
 const IDLE_MS = 60000;           // 帖子冷场这么久，角色可能自己开个话题
 
-const load = () => { try { return JSON.parse(localStorage.getItem(PREF)) || {}; } catch (e) { return {}; } };
+const load = (key) => { try { return JSON.parse(localStorage.getItem(key)) || {}; } catch (e) { return {}; } };
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 const rand = (a, b) => a + Math.random() * (b - a);
 
 export class Town {
   constructor(app) {
     this.app = app;
-    const p = load();
-    this.url = p.url || 'http://127.0.0.1:18780';
+    this.prefKey = app.opts?.townStorageKey || PREF;
+    const p = load(this.prefKey);
+    this.fixed = !!app.opts?.townUrl;   // 正式站点：同源服务，用户不用填地址
+    this.url = app.opts?.townUrl || p.url || 'http://127.0.0.1:18780';
     this.token = p.token || '';      // 登录后的会话令牌（正式小镇）
     this.char = p.char || '';        // 我在这个小镇上的角色 id（登录模式，服务器分配）
     this.legacyId = p.me || uid('m').replace(/[^a-z0-9_-]/gi, '');
@@ -33,8 +36,11 @@ export class Town {
     this.online = false;
     this.error = '';
     this.cfg = null;                 // 小镇开了哪些登录方式
+    this.loginAttempt = null;
     this.account = null;
     this.threads = [];
+    this.sort = 'active';
+    this.nextOffset = null;
     this.thread = null;              // 当前所在的帖子 { id, title, posts, here }
     this.busy = false;
     this._save();
@@ -43,23 +49,23 @@ export class Town {
   memory() { const k = this.url.replace(/^https?:\/\//, '') + '|' + (this.me || 'anon'); if (!this._mem || this._memKey !== k) { this._mem = new Memory(k); this._memKey = k; } return this._mem; }
   /** 我的角色 id：登录模式用服务器分配的，原型模式用本机生成的 */
   get me() { return this.cfg && !this.cfg.legacy ? this.char : this.legacyId; }
-  _save() { try { localStorage.setItem(PREF, JSON.stringify({ url: this.url, token: this.token, char: this.char, me: this.legacyId, key: this.key, auto: this.auto, stamps: this.stamps })); } catch (e) { /* 忽略 */ } }
-  _changed() { const s = this.app.shell; if (s && (s.page === 'social' || s.page === 'town')) s.render(); }
+  _save() { try { localStorage.setItem(this.prefKey, JSON.stringify({ url: this.url, token: this.token, char: this.char, me: this.legacyId, key: this.key, auto: this.auto, stamps: this.stamps })); } catch (e) { /* 忽略 */ } }
+  _changed() { const s = this.app.shell; if (s && (s.page === 'social' || s.page === 'town' || s.page === 'legacy')) s.render(); }
 
-  async call(ep, body) {
+  async call(ep, body, options) {
     const headers = { 'content-type': 'application/json' };
     if (this.token) headers.authorization = 'Bearer ' + this.token;
-    const r = await fetch(this.url + '/api/' + ep, { method: 'POST', headers, body: JSON.stringify(Object.assign({ me: this.me, key: this.key }, body)) });
+    const r = await fetch(this.url + '/api/' + ep, { method: 'POST', headers, signal: options?.signal, body: JSON.stringify(Object.assign({ me: this.me, key: this.key }, body)) });
     const d = await r.json().catch(() => ({}));
     if (r.status === 401 && this.token) { this.token = ''; this._save(); }
-    if (!r.ok) throw new Error(d.error || 'HTTP ' + r.status);
+    if (!r.ok) throw Object.assign(new Error(d.error || 'HTTP ' + r.status), { status: r.status, code: d.code });
     return d;
   }
 
   /** 主角：用她的名字和样子在小镇上露面 */
   _self() {
     const a = this.app.mainAgent(), d = (a && a.data) || {};
-    return { a, name: (a && a.name) || '大肥鱼', kind: d.kind || 'girl', look: d.look || {}, character: d.character || null };
+    return { a, name: (a && a.name) || '角色', kind: d.kind || 'girl', look: publicLook(d.look), character: d.character || null };
   }
 
   /** 连接：先问小镇要不要登录；要登录但还没有令牌时停在“请登录”，等 login() */
@@ -77,63 +83,117 @@ export class Town {
       this.reasons = this.cfg.reasons || [];
       if (this.cfg.legacy) {
         const r = await this.call('hello', { name: s.name, kind: s.kind, look: s.look });
-        this.threads = r.threads; this.meInfo = r.me; this.account = null;
+        this.threads = r.threads; this.nextOffset = r.nextOffset ?? null; this.meInfo = r.me; this.account = null;
       } else {
         if (!this.token) { this.error = ''; this._changed(); return false; }
         const r = await this.call('me', {});
-        // 主角就是我在小镇上的角色：没有就建一只，有就把名字和样子同步过去
-        const known = r.characters.find((c) => c.id === this.char);
-        const c = (await this.call('character', { me: known ? this.char : '', name: s.name, kind: s.kind, look: s.look })).character;
+        let c;
+        if (this.app.opts.site) {
+          // 网页体验角色只是本机模板：身份以服务端默认角色为准，绝不用它覆盖账号里的昵称和外观
+          this.identity = await this.call('accountBootstrap', {});
+          c = this.identity.characters.find((x) => x.id === this.char) || this.identity.characters.find((x) => x.id === this.identity.defaultCharacterId);
+        } else {
+          // 主角就是我在小镇上的角色：没有就建一只，有就把名字和样子同步过去
+          const known = r.characters.find((x) => x.id === this.char);
+          c = (await this.call('character', { me: known ? this.char : '', name: s.name, kind: s.kind, look: s.look })).character;
+        }
         this.char = c.id; this._save();
-        this.account = r.account; this.threads = r.threads;
+        this.account = r.account; this.threads = r.threads; this.nextOffset = r.nextOffset ?? null;
         this.meInfo = { id: c.id, roles: r.roles, ban: r.ban };
       }
       this.online = true; this.error = '';
     } catch (e) {
-      this.online = false; this.error = e.message === 'Failed to fetch' ? '连不上小镇（先运行 npm run town）' : e.message;
+      this.online = false; this.error = e.message === 'Failed to fetch' ? (this.fixed ? '世界暂时连不上' : '连不上小镇（先运行 npm run town）') : e.message;
       this._changed();
       return false;
     }
     const q = new URLSearchParams(this.token ? { token: this.token, me: this.me } : { me: this.me, key: this.key });
     const es = this.es = new EventSource(this.url + '/events?' + q);
-    es.addEventListener('threads', (e) => { if (this.sort && this.sort !== 'active') this.sortBy(this.sort).catch(() => {}); else { this.threads = JSON.parse(e.data).threads; this._changed(); } });
+    const refreshThreads = () => {
+      if (this.es !== es || this._threadRefresh) return;
+      this._threadRefresh = setTimeout(() => {
+        this._threadRefresh = null;
+        if (this.es === es) this.sortBy(this.sort).catch(() => {});
+      }, 150);
+    };
+    es.addEventListener('threads', refreshThreads);
     es.addEventListener('presence', (e) => { const d = JSON.parse(e.data); if (this.thread && d.thread === this.thread.id) { this.thread.here = d.here; this._cast(); this._changed(); } });
     es.addEventListener('post', (e) => { const d = JSON.parse(e.data); if (this.thread && d.thread === this.thread.id) this._onPost(d.post); });
     es.addEventListener('likes', (e) => { const d = JSON.parse(e.data); const p = this.thread && d.thread === this.thread.id && this.thread.posts.find((x) => x.id === d.post); if (p) { p.likes = d.likes; this._changed(); } });
     es.addEventListener('hidden', (e) => { const d = JSON.parse(e.data); if (this.thread && d.thread === this.thread.id) { this.thread.posts = this.thread.posts.filter((p) => p.id !== d.post); this._changed(); } });
     es.addEventListener('kicked', (e) => { const d = JSON.parse(e.data); if (this.thread && (!d.thread || d.thread === this.thread.id)) { this.app.hud.toast(d.thread ? '你被请出了这个帖子' : '账号已被封禁', 3000); this.leave(); } });
-    es.onerror = () => { this.online = es.readyState === 1; this._changed(); };
-    es.onopen = () => { this.online = true; if (this.thread) this.call('join', { thread: this.thread.id }).catch(() => {}); this._changed(); };
+    es.addEventListener('sessionEnded', () => {
+      if (this.es !== es) return;
+      this.disconnect();
+      this.token = ''; this.account = null; this.meInfo = null; this.identity = null; this._save();
+      this.error = '小镇登录已结束，请重新连接';
+      this.leave(true).catch(() => {});
+      this._changed();
+    });
+    es.onerror = () => {
+      this.online = es.readyState === EventSource.OPEN;
+      if (es.readyState === EventSource.CLOSED) this.error = '小镇连接已关闭，请重新连接';
+      this._changed();
+    };
+    es.onopen = () => {
+      this.online = true;
+      this.error = '';
+      refreshThreads();
+      const previous = this.thread;
+      if (previous) this.call('join', { thread: previous.id }).then(() => this.call('get', { thread: previous.id })).then(({ thread }) => {
+        if (this.es !== es || this.thread !== previous) return;
+        Object.assign(previous, { here: thread.here, posts: thread.posts, likes: thread.likes, liked: thread.liked });
+        this._cast();
+        this._changed();
+      }).catch(() => {});
+      this._changed();
+    };
     this._changed();
     return true;
   }
 
   /**
    * 登录：新窗口打开小镇的登录页（GitHub / linux.do 授权），这边轮询拿令牌。
-   * 不靠 postMessage：DSH 桌面版里新窗口可能没有 opener。
+   * DSH 桌面版会把链接交给系统浏览器，并返回 null。网页拦截弹窗时也可以点链接继续。
    */
   async login(provider) {
+    if (this.loginAttempt) return false;
     const nonce = Array.from(crypto.getRandomValues(new Uint8Array(24)), (b) => b.toString(16).padStart(2, '0')).join('');
-    const w = window.open(this.url + '/auth/' + provider + '/start?nonce=' + nonce, 'town-login', 'width=520,height=680');
-    if (!w) throw new Error('弹窗被拦住了，允许弹窗后再试');
-    this.loggingIn = true; this._changed();
+    const url = new URL(this.url + '/auth/' + encodeURIComponent(provider) + '/start');
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('小镇地址不合法');
+    url.searchParams.set('nonce', nonce);
+    const popup = window.open(url.href, 'town-login', 'width=520,height=680');
+    const attempt = this.loginAttempt = { fallbackUrl: popup ? '' : url.href };
+    this._changed();
     try {
       for (let i = 0; i < 150; i++) {          // 最多等 5 分钟
         await delay(2000);
+        if (this.loginAttempt !== attempt) return false;
         const r = await this.call('authPoll', { nonce });
+        if (this.loginAttempt !== attempt) return false;
         if (r.token) { this.token = r.token; this._save(); return this.connect(); }
       }
       throw new Error('登录等太久了，再试一次');
-    } finally { this.loggingIn = false; this._changed(); }
+    } finally {
+      if (this.loginAttempt === attempt) this.cancelLogin();
+    }
+  }
+  cancelLogin() {
+    this.loginAttempt = null;
+    this._changed();
   }
   async logout() {
     if (this.thread) await this.leave(true);
     try { await this.call('logout', {}); } catch (e) { /* 忽略 */ }
-    this.token = ''; this.account = null; this.meInfo = null; this._save();
+    this.token = ''; this.account = null; this.meInfo = null; this.identity = null; this._save();
     this.disconnect(); this._changed();
   }
   disconnect() {
+    this.loginAttempt = null;
     if (this.es) { this.es.close(); this.es = null; }
+    clearTimeout(this._threadRefresh);
+    this._threadRefresh = null;
+    this._threadRequest = null;
     this.online = false;
   }
 
@@ -305,7 +365,21 @@ export class Town {
     if (obj) { obj.liked = r.on; obj.likes = r.likes; }
     this._changed();
   }
-  async sortBy(sort) { this.sort = sort; this.threads = (await this.call('threads', { sort })).threads; this._changed(); }
+  async sortBy(sort, append = false) {
+    const offset = append ? this.nextOffset : 0;
+    if (offset == null) return;
+    const url = this.url;
+    const request = this._threadRequest = {};
+    this.sort = sort;
+    const { threads, nextOffset } = await this.call('threads', { sort, offset });
+    if (this._threadRequest !== request || this.url !== url) return;
+    if (append) {
+      const known = new Set(this.threads.map(({ id }) => id));
+      this.threads.push(...threads.filter(({ id }) => !known.has(id)));
+    } else this.threads = threads;
+    this.nextOffset = nextOffset ?? null;
+    this._changed();
+  }
   report(target, reason, note) { return this.call('report', { target, reason, note }); }
   lock(on) { return this.call('lock', { thread: this.thread.id, locked: !!on }); }
   kick(member) { return this.call('kick', { thread: this.thread.id, member }); }

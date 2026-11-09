@@ -5,7 +5,8 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { openStore } from './town-store.mjs';
+import { DatabaseSync } from 'node:sqlite';
+import { backupDatabase } from './town-store.mjs';
 
 const [db, dir, keepArg] = process.argv.slice(2);
 if (!db || !dir) { console.error('用法：node scripts/town-backup.mjs <town.db> <备份目录> [保留天数]'); process.exit(1); }
@@ -14,9 +15,9 @@ const keep = Number(keepArg) > 0 ? Number(keepArg) : 14;
 fs.mkdirSync(dir, { recursive: true });
 const stamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19);
 const out = path.join(dir, `town-${stamp}.db`);
-const store = await openStore(db);
-store.backup(out);
-store.close();
+const source = new DatabaseSync(db, { readOnly: true });
+try { backupDatabase(source, out); }
+finally { source.close(); }
 console.log('已备份：' + out + '（' + fs.statSync(out).size + ' 字节）');
 for (const f of fs.readdirSync(dir)) {
   if (!/^town-.*\.db$/.test(f)) continue;

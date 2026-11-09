@@ -200,6 +200,12 @@ export const CSS = `
 .rk-drawer{right:10px;top:52px}
 .rk-compact .rk-card{bottom:62px}
 .rk-compact .rk-drawer{left:6px;right:6px;width:auto;top:44px}
+.rk-root .rk-drawer.rk-object-menu{right:auto;bottom:auto;box-sizing:border-box;width:248px;max-width:calc(100% - 16px);padding:10px 12px;overflow:visible}
+.rk-object-menu .rk-drawer-body{max-height:inherit;overflow:auto;overscroll-behavior:contain}
+.rk-object-menu:after{content:"";position:absolute;left:var(--rk-tail-x,50%);bottom:-7px;width:12px;height:12px;background:var(--rk-panel);border-right:1px solid var(--rk-line);border-bottom:1px solid var(--rk-line);transform:translateX(-50%) rotate(45deg)}
+.rk-object-menu.rk-menu-below:after{bottom:auto;top:-7px;transform:translateX(-50%) rotate(225deg)}
+.rk-object-menu h4{padding-right:20px}
+.rk-object-menu .rk-sub:empty{display:none}
 .rk-x{position:absolute;right:10px;top:8px;cursor:pointer;color:var(--rk-sub);font-size:15px;border:0;background:none}
 .rk-card h4,.rk-drawer h4{margin:0 0 2px;font-size:14px}
 .rk-sub{color:var(--rk-sub);font-size:12px;margin-bottom:8px}
@@ -211,6 +217,13 @@ export const CSS = `
 .rk-row .rk-btn{padding:4px 9px;font-size:12px;box-shadow:none}
 .rk-kv{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:2px 0}
 .rk-kv span:first-child{color:var(--rk-sub)}
+.rk-world-panel{padding:8px 0;margin:6px 0;border-block:1px solid var(--rk-line);overflow-wrap:anywhere}
+.rk-world-panel small{display:block;color:var(--rk-sub);font-size:11px}
+.rk-world-panel label:not(.rk-check){display:grid;gap:4px;min-width:0;font-size:12px;margin:5px 0}
+.rk-world-panel input:not([type=checkbox]),.rk-world-panel select{box-sizing:border-box;max-width:100%;min-width:0;padding:6px 8px;border:1px solid var(--rk-line);border-radius:8px;background:transparent;color:inherit;font:inherit;user-select:text}
+.rk-world-panel .rk-chat-bar input{flex:1}
+.rk-world-targets{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(120px,100%),1fr));gap:0 6px}
+.rk-world-experiences{margin-top:8px}
 
 /* ── 布置模式 ── */
 .rk-panel{position:absolute;right:10px;top:10px;bottom:10px;width:248px;z-index:35;display:none;flex-direction:column;
@@ -303,6 +316,34 @@ export const CSS = `
 
 /* 桌面模式：只剩房间和角色（desk.js） */
 .rk-desk{min-height:0}
+.rk-world-chip{position:absolute;left:50%;top:8px;transform:translateX(-50%);z-index:31;display:none;align-items:center;gap:8px;max-width:calc(100% - 24px);padding:4px 5px 4px 13px;border-radius:999px;background:var(--rk-panel);box-shadow:0 4px 16px rgba(36,48,74,.14);white-space:nowrap}
+.rk-world-chip.on{display:flex}
+.rk-world-chip b{font-size:13px;overflow:hidden;text-overflow:ellipsis}
+.rk-world-chip small{font-size:11px;color:var(--rk-sub)}
+.rk-compact .rk-world-chip{top:44px}
+.rk-coach.rk-welcome{left:16px;top:auto;bottom:80px;transform:none;width:min(292px,calc(100% - 32px));padding:14px 16px;color:var(--rk-ink);background:var(--rk-panel);box-shadow:0 10px 32px rgba(36,48,74,.16)}
+.rk-coach.rk-welcome b{font-size:15px}
+.rk-coach.rk-welcome p{margin:4px 0 10px;font-size:13px;color:var(--rk-sub)}
+.rk-coach.rk-welcome .rk-btn{display:inline-block;margin:0;box-shadow:none;color:var(--rk-ink);background:none}
+.rk-coach.rk-welcome .rk-btn.on{color:#fff;background:var(--rk-acc)}
+.rk-welcome-links{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:10px;font-size:12px}
+.rk-welcome-links a{color:var(--rk-sub);text-decoration:none}
+.rk-welcome-links a:hover{color:var(--rk-acc)}
+.rk-compact .rk-coach.rk-welcome{left:8px;right:8px;width:auto;bottom:66px}
+.rk-hub-who{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px}
+.rk-hub-who span{display:flex;flex-direction:column;min-width:0}
+.rk-hub-who small,.rk-hub-card small{font-size:11.5px;color:var(--rk-sub)}
+.rk-hub-card{display:flex;flex-direction:column;gap:6px;margin:8px 0;padding:10px 12px;border-radius:12px;background:rgba(77,124,243,.08)}
+.rk-hub-card .rk-hint{margin:0}
+.rk-hub-error{color:#c0492f}
+.rk-world-card{margin:8px 0;padding:8px;border:1px solid var(--rk-line);border-radius:12px}
+.rk-world-card canvas{display:block;width:100%;height:auto;border-radius:8px;background:#e7eff8}
+.rk-world-card>div:first-of-type{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-top:6px}
+.rk-world-card small{font-size:11.5px;color:var(--rk-sub);white-space:nowrap}
+.rk-world-card p{margin:3px 0 7px;font-size:12.5px;line-height:1.5;color:var(--rk-sub)}
+.rk-hub-more{margin-top:10px;font-size:13px}
+.rk-hub-more summary{cursor:pointer;color:var(--rk-sub)}
+.rk-hub-foot{display:flex;justify-content:space-between;gap:10px;margin-top:14px;font-size:12px}
 .rk-desk .rk-top,.rk-desk .rk-dock,.rk-desk .rk-sheet,.rk-desk .rk-menu,.rk-desk .rk-coach,.rk-desk .rk-story-pill{display:none!important}
 .rk-desk .rk-card,.rk-desk.rk-compact .rk-card{left:auto;right:6px;bottom:6px;width:min(236px,calc(100% - 12px));max-height:calc(100% - 12px);overflow:auto}
 .rk-desk .rk-drawer{top:6px}

@@ -1,0 +1,33 @@
+{
+  "name": "roomkit-neutral",
+  "version": "0.1.0-l1.0",
+  "description": "Standalone RoomKit scene editor and cooperative world client",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "exports": {
+    ".": "./web/roomkit/index.js",
+    "./world-format": "./shared/world-format.js",
+    "./preview": "./scripts/preview.mjs"
+  },
+  "files": [
+    "NOTICE.md",
+    "web/example.html",
+    "web/index.html",
+    "web/packs/example/pack.js",
+    "web/dist/roomkit.js",
+    "web/dist/launch.js",
+    "web/roomkit/*.js",
+    "shared/*.js",
+    "scripts/build.mjs",
+    "src/web.js",
+    "scripts/preview.mjs",
+    "scripts/local-agent.mjs"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "serve": "node scripts/preview.mjs",
+    "prepack": "npm run build"
+  },
+  "devDependencies": { "esbuild": "0.25.12" }
+}

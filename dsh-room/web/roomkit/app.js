@@ -25,6 +25,7 @@ import { Desk } from './desk.js';
 import { Editor } from './editor.js';
 import { Stories } from './story.js';
 import { Dialog } from './dialog.js';
+import { DEFAULT_ROLE } from './default-characters.js';
 import { DEFAULT_CHARACTERS, normalizeCharacter } from './character.js';
 import { PackStore, validatePack } from './packs.js';
 import { PHRASES } from './brain.js';
@@ -34,15 +35,20 @@ import { Emitter, clamp, pick, rand, clone, uid, delay } from './util.js';
 import { orient } from './iso.js';
 import { VERSION } from './version.js';
 import { Town } from './town.js';
+import { WorldDrafts } from './world-drafts.js';
+import { WorldSession } from './world-session.js';
 
 export { VERSION };
 
 /* ───────── 存储适配器（默认 localStorage；DSH 里可换成宿主接口） ───────── */
-export function localStore(prefix = 'roomkit') {
-  const ls = (() => { try { return window.localStorage; } catch (e) { return null; } })();
+export function localStore(prefix = 'roomkit', backing) {
+  const ls = backing === undefined ? (() => { try { return window.localStorage; } catch (e) { return null; } })() : backing;
   const get = (k) => { try { return ls ? JSON.parse(ls.getItem(prefix + '.' + k) || 'null') : null; } catch (e) { return null; } };
-  const set = (k, v) => { try { if (ls) ls.setItem(prefix + '.' + k, JSON.stringify(v)); } catch (e) { console.warn('[roomkit] 保存失败:', e); } };
+  let failed = !ls;
+  const set = (k, v) => { try { if (ls) { ls.setItem(prefix + '.' + k, JSON.stringify(v)); failed = false; } } catch (e) { failed = true; console.warn('[roomkit] 保存失败:', e); } };
   return {
+    /** 最近一次写入是否失败（或浏览器不提供存储）：界面据此说明只是临时体验 */
+    get failed() { return failed; },
     load(id) { const sid = id || get('last'); return sid ? get('scene.' + sid) : null; },
     /** opts.last === false：只写存档、不改"上次在哪个房间"（给别的房间写门、整理家时） */
     save(scene, opts) { scene.updated = Date.now(); set('scene.' + scene.id, scene); if (!opts || opts.last !== false) set('last', scene.id); },
@@ -74,6 +80,7 @@ class App {
     this.version = VERSION;
     injectCss(el.ownerDocument || document);
     this.bus = new Emitter();
+    this.chatAbort = new AbortController();
     this.iso = new Iso(64, 32);
     this.t = 0;
     this.mode = 'play';
@@ -83,9 +90,10 @@ class App {
     this.content = [];
     this.packs = [];
     this.characters = new Map();
-    DEFAULT_CHARACTERS.forEach((c) => this.addCharacter(c));
+    if (!this.opts.neutral) DEFAULT_CHARACTERS.forEach((c) => this.addCharacter(c));
     this.stories = new Stories(this);
     (this.opts.packs || window.RoomKitPacks || []).forEach((p) => this.usePack(p));
+    if (this.opts.initialStoredPacks) this.restoreStoredPacks(this.opts.initialStoredPacks);
     this.home = new Home(this);
     this.reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
@@ -113,6 +121,9 @@ class App {
     this.soundOn = !!this.storage.pref('sound');
     this.shell = new Shell(this);
     this.town = new Town(this);
+    this.worldDrafts = new WorldDrafts(this);
+    this.worldSession = new WorldSession(this);
+    this.world.allowApply = () => !this.homePaused && (!this.worldSession.id || this.worldSession.applying);
     this.desk = this.opts.desk ? new Desk(this) : null;
 
     this._syncAgents(true);
@@ -137,19 +148,25 @@ class App {
     }
     this._loop();
     this.packStore = this.opts.packStore === false ? null : this.opts.packStore || new PackStore(this.opts.storageKey || 'roomkit');
-    if (this.packStore) this.loadStoredPacks();
+    this.packsReady = this.packStore && !this.opts.initialStoredPacks ? this.loadStoredPacks() : Promise.resolve();
     this.bus.emit('ready', { version: VERSION, scene: this.world.scene.id });
+    if (this.opts.site) this.shell.hub.start();
   }
 
   /** 装过的社区包 / 自制家具包（IndexedDB）：启动后异步装回来，场景里引用它们的家具随即出现 */
   async loadStoredPacks() {
     const list = await this.packStore.list();
+    if (this._dead) return;
+    this.restoreStoredPacks(list);
+    if (list.length) this.bus.emit('packs:loaded', { count: list.length });
+  }
+
+  restoreStoredPacks(list) {
     for (const raw of list) {
       const v = raw.validated ? { ok: true, pack: raw } : validatePack(raw);
       if (v.ok) this.usePack(v.pack);
       else console.warn('[roomkit] 已装的内容包校验失败，跳过:', raw && raw.id, v.errors);
     }
-    if (list.length) this.bus.emit('packs:loaded', { count: list.length });
   }
 
   /** 安装社区包（JSON 文本或对象）：校验 → 持久化 → 立即可用 */
@@ -204,7 +221,7 @@ class App {
     if (s) return s;
     const p = this.packs.find((x) => x.scenes && x.scenes.length);
     if (p) return Object.assign(clone(p.scenes[0]), { template: p.scenes[0].id });
-    return { id: 'room', name: '房间', room: { w: 8, h: 6 }, objects: [], agents: [{ name: '大肥鱼', brain: 'pet', x: 4, y: 3 }] };
+    return { id: 'room', name: '房间', room: { w: 8, h: 6 }, objects: [], agents: [{ name: DEFAULT_ROLE.name, brain: DEFAULT_ROLE.brain, x: 4, y: 3 }] };
   }
   /** 场景是从哪个模板来的（恢复默认用） */
   templateOf(scene) {
@@ -223,6 +240,7 @@ class App {
     const minGap = this.opts.maxFps ? 1000 / this.opts.maxFps - 2 : 0;
     const tick = (now) => {
       if (this._dead) return;
+      if (this.homePaused) { last = now; this._raf = requestAnimationFrame(tick); return; }
       if (minGap && now - last < minGap) { this._raf = requestAnimationFrame(tick); return; }
       const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
       last = now;
@@ -241,6 +259,10 @@ class App {
   update(dt) {
     this._envT = (this._envT || 0) - dt;
     if (this._envT <= 0) { this._envT = 1; this.env = envAt(this.hour(), this.world.scene.env.weather); }
+    if (this.worldSession?.id) {
+      for (const agent of this.agents.values()) agent.update(dt);
+      return;
+    }
     if (this.opts.stories !== false) this.stories.tick(dt);
     const night = this.env.night;
     for (const a of this.agents.values()) {
@@ -297,7 +319,7 @@ class App {
     const ids = new Set(recs.map((r) => r.id));
     for (const [id, ag] of this.agents) {
       if (ids.has(id)) continue;
-      this.brains.get(id).stop();
+      this.brains.get(id)?.stop();
       ag.dispose();
       this.brains.delete(id); this.agents.delete(id);
       this.world.releaseAll(id);
@@ -308,7 +330,7 @@ class App {
       const a = new Agent(r, this);
       if (!this.nav.freeAt(a.x, a.y)) { const p = this.nav.nearestFree(a.x, a.y, 10); if (p) { a.x = p.x; a.y = p.y; } }
       this.agents.set(r.id, a);
-      this.brains.set(r.id, new Brain(a, this));
+      if (!this.worldSession?.id) this.brains.set(r.id, new Brain(a, this));
     }
   }
 
@@ -334,9 +356,25 @@ class App {
     this._saveT = setTimeout(() => this.storage.save(this.world.toJSON()), 500);
   }
 
+  checkpointHome() {
+    clearTimeout(this._saveT);
+    if (!this.visiting && this.opts.autosave) this.storage.save(this.world.toJSON());
+  }
+
+  pauseHome(paused) {
+    this.homePaused = paused;
+    this.root.inert = paused;
+    if (paused) {
+      this.chatAbort.abort();
+      this.worldSession.stopAI();
+      clearTimeout(this._saveT);
+    } else this.chatAbort = new AbortController();
+  }
+
   /* ───────── 模式 ───────── */
 
   setMode(m) {
+    if (m === 'edit' && this.worldSession?.id) return;
     if (m === this.mode) return;
     if (m === 'edit') this.stories.skip();
     this.mode = m;
@@ -355,13 +393,14 @@ class App {
   _bindInput() {
     const c = this.canvas, R = this.renderer, root = this.root;
     const pts = new Map();
-    let down = null, pinch = null;
+    let down = null, pinch = null, contextDragged = false;
     const local = (e) => { const r = c.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
     c.addEventListener('pointerdown', (e) => {
       try { c.setPointerCapture(e.pointerId); } catch (err) { /* 合成事件没有指针 */ }
       root.focus({ preventScroll: true });
       this._audioUnlock();
       const p = local(e);
+      if (e.button === 2) contextDragged = false;
       pts.set(e.pointerId, p);
       if (pts.size === 2) {
         const [a, b] = [...pts.values()];
@@ -384,7 +423,11 @@ class App {
         return;
       }
       if (down) {
-        if (!down.moved && Math.hypot(p.x - down.x, p.y - down.y) > 4) { down.moved = true; if (this.desk) this.desk.dragStart(); }
+        if (!down.moved && Math.hypot(p.x - down.x, p.y - down.y) > 4) {
+          down.moved = true;
+          if (down.button === 2) { contextDragged = true; this.hud.closeDrawer(); }
+          if (this.desk) this.desk.dragStart();
+        }
         if (this.desk) { if (down.moved) this.desk.dragMove(); return; }
         if (this.mode === 'edit' && down.edit) this.editor.onMove(p.x, p.y, true);
         else if (down.moved) { R.panBy(p.x - down.lx, p.y - down.ly); root.classList.add('rk-panning'); }
@@ -423,7 +466,15 @@ class App {
       const p = local(e), hit = R.pick(p.x, p.y);
       if (!hit || hit.kind === 'floor' || hit.kind === 'wallface') R.fit(false);
     });
-    c.addEventListener('contextmenu', (e) => { e.preventDefault(); if (this.desk) this.desk.openMenu(e.clientX, e.clientY); });
+    c.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      if (contextDragged || this.stories.active || this.mode === 'edit' || this.worldSession?.id) return;
+      const p = local(e), hit = R.pick(p.x, p.y);
+      if (hit?.kind === 'obj' && hit.def.portal && hit.obj.wall) {
+        this.hud.hideTip();
+        this.shell.doorCard(hit.obj);
+      } else if (this.desk) this.desk.openMenu(e.clientX, e.clientY);
+    });
     root.addEventListener('keydown', (e) => {
       const tag = e.target && e.target.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
@@ -455,7 +506,11 @@ class App {
     const id = hit && (hit.kind === 'obj' || hit.kind === 'agent') ? hit.id : null;
     if ((R.hover && R.hover.id) !== id) {
       R.hover = id ? { id } : null;
-      if (hit && hit.kind === 'obj') this.hud.showTip(hit, hit.def.name, hit.def.sub);
+      if (hit && hit.kind === 'obj') {
+        const room = hit.def.portal && hit.obj.wall && this.home.room(hit.obj.state?.to);
+        this.hud.showTip(hit, hit.def.name, hit.def.portal && hit.obj.wall && !this.worldSession?.id
+          ? (room ? '前往' + room.name + ' · 右键设置' : '右键连接房间') : hit.def.sub);
+      }
       else if (hit && hit.kind === 'agent') this.hud.showTip(hit, hit.agent.name, hit.agent.activity);
       else this.hud.hideTip();
       if (id) this.sfx('tick');
@@ -469,6 +524,11 @@ class App {
     const R = this.renderer;
     if (this.stories.active) { this.dialog.advance(); return; }   // 剧情中：点哪儿都是"下一句"
     const hit = R.pick(sx, sy);
+    if (this.worldSession?.id) {
+      if (hit?.kind === 'floor') this.worldSession.run('move', { x: hit.x, y: hit.y });
+      if (hit?.kind === 'obj') this.activate(hit.obj);
+      return;
+    }
     if (!hit) { this.hud.closeCard(); this.hud.closeDrawer(); R.selected = null; return; }
     if (hit.kind === 'agent') {
       const st = this.stories.forAgent(hit.agent);
@@ -501,20 +561,26 @@ class App {
 
   /** 点家具：def.act = 'toggle:key' | 'use:slotId' | 'play:id' | 'weather' | 'shake' | 'info' */
   activate(o) {
+    if (this.worldSession?.id) { this.worldSession.run('interact', { objectId: o.id }); return; }
     const def = this.world.def(o);
     if (!def) return;
+    if (def.portal && o.wall) {
+      this.hud.closeCard(); this.hud.closeDrawer(); this.hud.hideTip();
+      this.sfx('click');
+      const to = o.state?.to;
+      if (to && this.home.has(to)) this.goRoom(to);
+      else {
+        const anchor = this.renderer.anchorOf({ id: o.id });
+        if (anchor) this.hud.float(anchor.x, anchor.y, to ? '目的房间已移除 · 右键重新连接' : '还没有连接房间 · 右键设置');
+      }
+      this.bus.emit('object:click', { id: o.id, def: def.id, to: to || null });
+      return;
+    }
     const st = this.stories.forObject(o);
     if (st && Math.random() < (st.trigger.chance != null ? st.trigger.chance : 1)) {
       this.renderer.wobble.set(o.id, this.t);
       this.stories.run(st, { target: o, who: this.focusAgent() });
       this.bus.emit('object:click', { id: o.id, def: def.id, story: st.id });
-      return;
-    }
-    if (def.portal && o.wall) {
-      this.renderer.wobble.set(o.id, this.t);
-      this.sfx('click');
-      this.shell.doorCard(o);
-      this.bus.emit('object:click', { id: o.id, def: def.id, to: (o.state && o.state.to) || null });
       return;
     }
     const act = def.act || (def.slots.length ? 'use' : 'info');
@@ -683,18 +749,22 @@ class App {
    * 回复里的 [[动作]] 标记会被剥掉并执行：wave / dance / sleep / read / goto:家具 / use:家具 / room:房间 / emote:符号
    */
   async chat(agent, text, history, opts) {
+    const signal = this.chatAbort.signal;
+    if (signal.aborted) return { text: '', acts: [], note: '房间正在切换窗口' };
+    if (this.worldSession?.id) return { text: '', acts: [], note: '请使用共享场次的发言入口' };
     const a = agent || this.mainAgent();
     if (!a) return { text: '', acts: [] };
     let res = null, note = '';
     if (this.ext.chat) {
       const c = this.characterOf(a);
       try {
-        const r = await this.ext.chat({ agent: { id: a.id, name: a.name }, character: c ? { id: c.id, name: c.name, persona: c.persona || '', scenario: c.scenario || '' } : null, text, history: (history || []).map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', text: m.who && m.who !== a.name ? m.who + '：' + m.text : m.text })), group: !!(opts && opts.group), thread: (opts && opts.thread) || '', memory: (opts && opts.memory) || '', room: this.describe() });
+        const r = await this.ext.chat({ agent: { id: a.id, name: a.name }, character: c ? { id: c.id, name: c.name, persona: c.persona || '', scenario: c.scenario || '' } : null, text, history: (history || []).map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', text: m.who && m.who !== a.name ? m.who + '：' + m.text : m.text })), group: !!(opts && opts.group), thread: (opts && opts.thread) || '', memory: (opts && opts.memory) || '', room: this.describe() }, signal);
         if (r && r.text) { res = parseActs(r.text); if (Array.isArray(r.acts)) res.acts = res.acts.concat(r.acts); }
         else note = (r && r.error) || '模型没有回话';
       } catch (e) { note = e.message || String(e); }
       if (note) note = '模型暂时用不了（' + note + '），先用离线台词回你';
     }
+    if (signal.aborted) return { text: '', acts: [], note: '房间正在切换窗口' };
     if (!res && opts && opts.silent) return { text: '', acts: [], note: note || '没有模型' };
     if (!res) {
       const rule = OFFLINE_RULES.find((x) => x[0].test(text));
@@ -710,6 +780,7 @@ class App {
   }
 
   applyActs(a, acts) {
+    if (this.worldSession?.id) return;
     for (const raw of acts.slice(0, 3)) {
       const [kind, arg] = String(raw).split(':').map((x) => x && x.trim());
       if (['wave', 'dance', 'sleep', 'read'].includes(kind)) { this.agentAction(a, kind); continue; }
@@ -730,6 +801,11 @@ class App {
 
   command(c) {
     if (!c || !c.op) return { ok: false, error: 'missing op' };
+    if (this.homePaused) return { ok: false, error: '房间正在切换窗口' };
+    if (this.worldSession?.id) {
+      const result = this.worldSession.bridge(c);
+      if (result) return result;
+    }
     const w = this.world;
     const agentOf = () => (c.id ? this.agents.get(c.id) : this.mainAgent());
     const queue = () => { const a = agentOf(); if (!a) return { ok: false, error: 'no agent' }; a.queue.push(c); a.cancel(); return { ok: true }; };
@@ -835,6 +911,7 @@ class App {
    * 她们从通回旧房间的门进屋。opts.followers 可以显式指定（[] = 谁也不带）。
    */
   openScene(scene, opts = {}) {
+    if (this.worldSession?.id && !this.worldSession.applying) return;
     if (!scene) return;
     clearTimeout(this._saveT);
     const from = this.world.scene.id;
@@ -891,7 +968,7 @@ class App {
 
   /** 去家里的另一个房间：转场 + 跟随的角色一起过去 */
   async goRoom(id) {
-    if (!id || this._going || this.visiting || id === this.world.scene.id) return false;
+    if (!id || this.homePaused || this._going || this.visiting || id === this.world.scene.id) return false;
     const scene = this.home.sceneFor(id) || this.storage.load(id);
     if (!scene || scene.id !== id) return false;
     this._going = true;
@@ -938,6 +1015,7 @@ class App {
   }
 
   loadScene(scene, opts) {
+    if (this.worldSession?.id) return;
     if (!scene) return;
     if (!(opts && opts.keepHistory)) this.editor.pushLoad(this.world.toJSON());
     this.world.load(scene);
@@ -1024,6 +1102,10 @@ class App {
 
   destroy() {
     this._dead = true;
+    this.chatAbort.abort();
+    clearTimeout(this._saveT);
+    this.worldSession?.leave({ closing: true }).catch(() => {});
+    this.town?.disconnect();
     cancelAnimationFrame(this._raf);
     for (const b of this.brains.values()) b.stop();
     for (const a of this.agents.values()) a.dispose();

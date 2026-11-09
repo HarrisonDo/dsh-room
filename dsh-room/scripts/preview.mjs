@@ -3,22 +3,28 @@ import http from 'node:http';
 import { readFile, realpath, stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { createLocalAgent } from './local-agent.mjs';
 
 export const DEFAULT_PORT = 18766;
 const WEB_ROOT = fileURLToPath(new URL('../web/', import.meta.url));
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.jpg': 'image/jpeg' };
 
-export async function startPreview({ port = DEFAULT_PORT, root = WEB_ROOT } = {}) {
+export async function startPreview({ port = DEFAULT_PORT, root = WEB_ROOT, agent = createLocalAgent() } = {}) {
   const base = await realpath(root);
-  const server = http.createServer(async (req, res) => {
+  const server = http.createServer({ headersTimeout: 8000, requestTimeout: 12000, connectionsCheckingInterval: 1000 }, async (req, res) => {
     const send = (code, body, type = 'text/plain; charset=utf-8') => {
       res.writeHead(code, { 'content-type': type, 'cache-control': 'no-cache', 'x-content-type-options': 'nosniff' });
       res.end(req.method === 'HEAD' ? undefined : body);
     };
-    if (!['GET', 'HEAD'].includes(req.method)) return send(405, 'Method not allowed');
     let pathname;
     try { pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname); }
     catch { return send(400, 'Bad URL'); }
+    if (pathname === '/__roomkit_agent') {
+      res.on('error', () => res.destroy());
+      try { await agent(req, res); } catch { res.destroy(); }
+      return;
+    }
+    if (!['GET', 'HEAD'].includes(req.method)) return send(405, 'Method not allowed');
     if (pathname === '/__roomkit_health') return send(200, JSON.stringify({ app: 'dsh-room', version: 1 }), 'application/json');
     const rel = pathname === '/' ? '/index.html' : pathname;
     const file = path.resolve(base, '.' + rel);

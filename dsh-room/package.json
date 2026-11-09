@@ -25,15 +25,20 @@
   "files": [
     "lib",
     "web",
+    "shared",
     "assets",
     "locales",
     "scripts/preview.mjs",
+    "scripts/local-agent.mjs",
     "scripts/launch.mjs",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "NOTICE.md"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
+    "build:example": "node scripts/build.mjs --example",
+    "build:site": "node scripts/build-site.mjs",
     "serve": "node scripts/preview.mjs",
     "town": "node scripts/town.mjs --db town.db --words ../out.txt",
     "preview": "node scripts/launch.mjs",

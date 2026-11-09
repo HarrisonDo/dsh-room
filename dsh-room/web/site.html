@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>RoomKit</title>
+<meta name="description" content="打开就能逛的 2.5D 小世界：布置自己的房间，和朋友一起进入同一个场景。">
+<link rel="icon" href="data:,">
+<style>
+  html, body { margin: 0; height: 100%; background: #dce9f6; }
+  #room { position: fixed; inset: 0; }
+  .rk-boot { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; color: #5b6b86; font: 14px/1.6 system-ui, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  .whale-showcase-link { position: fixed; right: 12px; bottom: 78px; z-index: 2; padding: 8px 12px; border-radius: 16px; background: #fff; color: #26486a; font: 14px system-ui, sans-serif; }
+</style>
+</head>
+<body>
+<main id="room" data-roomkit-example data-roomkit-site><p class="rk-boot">正在打开小屋…</p></main>
+<!-- ROOMKIT_SHOWCASE_LINK -->
+<script src="{{engine}}"></script>
+<script src="{{packs}}"></script>
+<script src="{{launch}}"></script>
+</body>
+</html>

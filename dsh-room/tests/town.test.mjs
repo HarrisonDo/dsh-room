@@ -2,12 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { createTown } from '../scripts/town.mjs';
+import { createTown, LIMIT } from '../scripts/town.mjs';
 import { openStore } from '../scripts/town-store.mjs';
 import { createModerator, parseWords, localCheck } from '../scripts/town-moderation.mjs';
 
 const KEY = 'k'.repeat(16);
-const scene = { format: 'roomkit.scene', id: 'home', agents: [{ id: 'x' }] };
+const scene = { format: 'roomkit.scene', v: 2, id: 'home', room: { w: 8, h: 6 }, objects: [], agents: [{ id: 'x' }] };
 const as = (me) => ({ me, key: KEY + me });
 const words = parseWords('坏词\nreview:可疑\n# 注释\n');
 
@@ -48,6 +48,35 @@ test('joining one thread leaves the others; posting is rate limited', async () =
   assert.equal(t.api.get({ thread: 'plaza' }).thread.here.length, 0);
   for (let i = 0; i < 12; i++) await t.api.post(Object.assign({ thread: id, text: 'hi' + i }, as('alice')));
   await assert.rejects(t.api.post(Object.assign({ thread: id, text: 'more' }, as('alice'))), /太快/);
+});
+
+test('thread pagination and transactional quota use the full visible count', async (ctx) => {
+  const t = await town();
+  ctx.after(() => t.store.close());
+  const now = Date.now();
+  t.store.transaction(() => {
+    for (let i = 0; i < LIMIT.threads - 2; i++) t.store.putThread({ id: `seed-${i}`, owner: 'bobby', title: `Seed ${i}`, scene, t: now + i });
+  });
+  const first = t.api.threads({ sort: 'new', limit: 3 });
+  const second = t.api.threads({ sort: 'new', limit: 3, offset: first.nextOffset });
+  assert.equal(first.nextOffset, 3);
+  assert.equal(new Set([...first.threads, ...second.threads].map(({ id }) => id)).size, 6);
+  assert.equal(t.store.threads()[0].scene, undefined);
+  await assert.rejects(t.api.create({ ...as('alice'), scene: { ...scene, objects: {} } }), /objects/);
+
+  const outcomes = await Promise.allSettled([1, 2].map((n) => t.api.create({ ...as('alice'), title: `房间 ${n}`, scene })));
+  assert.equal(outcomes.filter(({ status }) => status === 'fulfilled').length, 1);
+  assert.equal(outcomes.find(({ status }) => status === 'rejected').reason.code, 429);
+  assert.equal(t.store.threadCount(), LIMIT.threads);
+
+  const { thread } = outcomes.find(({ status }) => status === 'fulfilled').value;
+  let broadcasts = 0;
+  t.clients.add({ res: { writable: true, writableLength: 0, write() { broadcasts++; return true; } } });
+  t.api.join({ ...as('alice'), thread: thread.id });
+  assert.ok(broadcasts > 0);
+  const afterJoin = broadcasts;
+  t.api.join({ ...as('alice'), thread: thread.id });
+  assert.equal(broadcasts, afterJoin);
 });
 
 test('sqlite store keeps threads, posts and bindings across restarts', async () => {

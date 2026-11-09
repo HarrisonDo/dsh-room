@@ -1,4 +1,5 @@
 node_modules/
+dsh-room/site/
 .DS_Store
 .zwork/
 .env

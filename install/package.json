@@ -1,0 +1,132 @@
+{
+  "name": "dsh-room",
+  "version": "0.1.0-r03c.1",
+  "description": "DSH 房间插件，带 Canvas Q 版鲸鱼娘、小屋、小院和宿主模型互动。",
+  "icon": "assets/icon.svg",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "desktop-pet",
+    "room",
+    "isometric",
+    "web-ui"
+  ],
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./locale/*": "./locales/*",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "LICENSE",
+    "NOTICE.md",
+    "README.md",
+    "assets/icon.svg",
+    "cordis.patch.yml",
+    "demo-theme/whale-girl.js",
+    "desktop/main.js",
+    "desktop/package.json",
+    "desktop/preload.cjs",
+    "lib/agent-tools.js",
+    "lib/chat.js",
+    "lib/client.js",
+    "lib/desktop-process.js",
+    "lib/desktop-runtime.js",
+    "lib/index.js",
+    "lib/local-home.js",
+    "lib/work-status.js",
+    "locales/en.json",
+    "locales/zh.json",
+    "scripts/build.mjs",
+    "shared/activities.js",
+    "shared/agent-request.js",
+    "shared/local-home-format.js",
+    "shared/public-appearance.js",
+    "shared/session-core.js",
+    "shared/world-assets.gen.js",
+    "shared/world-format.js",
+    "src/client.js",
+    "src/desktop-web.js",
+    "src/home-view.js",
+    "src/web.js",
+    "web/dist/desktop-launch.js",
+    "web/dist/launch.js",
+    "web/dist/roomkit.js",
+    "web/index.html",
+    "web/managed.html",
+    "web/packs/example/pack.js",
+    "web/packs/home/pack.js",
+    "web/roomkit/agent-adapter.js",
+    "web/roomkit/agents.js",
+    "web/roomkit/app.js",
+    "web/roomkit/appearance.js",
+    "web/roomkit/bodies.js",
+    "web/roomkit/brain.js",
+    "web/roomkit/catalog.js",
+    "web/roomkit/character.js",
+    "web/roomkit/default-characters.js",
+    "web/roomkit/depth.js",
+    "web/roomkit/desk.js",
+    "web/roomkit/dialog.js",
+    "web/roomkit/editor.js",
+    "web/roomkit/env.js",
+    "web/roomkit/experience.js",
+    "web/roomkit/home.js",
+    "web/roomkit/index.js",
+    "web/roomkit/iso.js",
+    "web/roomkit/memory.js",
+    "web/roomkit/nav.js",
+    "web/roomkit/packs.js",
+    "web/roomkit/paint-emote.js",
+    "web/roomkit/paint-furniture.js",
+    "web/roomkit/paint-girl.js",
+    "web/roomkit/paint-room.js",
+    "web/roomkit/renderer.js",
+    "web/roomkit/scene.js",
+    "web/roomkit/shell.js",
+    "web/roomkit/story.js",
+    "web/roomkit/style.js",
+    "web/roomkit/token-body.js",
+    "web/roomkit/town.js",
+    "web/roomkit/ui.js",
+    "web/roomkit/util.js",
+    "web/roomkit/version.js",
+    "web/roomkit/workshop.js",
+    "web/roomkit/world-drafts.js",
+    "web/roomkit/world-hub.js",
+    "web/roomkit/world-panel.js",
+    "web/roomkit/world-session.js"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "prepack": "npm run build"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-connection"
+      ],
+      "platform": "web"
+    },
+    "compatibility": {
+      "dshReleases": {
+        "0.2.2-rc.1": "unknown"
+      }
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.4",
+    "react": "^18.2.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12"
+  }
+}

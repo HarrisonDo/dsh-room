@@ -9,7 +9,7 @@ import { clamp, ease, rgba, shade, inPoly, mix, hash2 } from './util.js';
 import { depthSort } from './depth.js';
 import { paintFloor, paintWalls, paintWallItem, wallItemFrame, wallItemQuad, paintWindowLight } from './paint-room.js';
 import { paintObject, hitObject, objectRect } from './paint-furniture.js';
-import { paintEmote } from './paint-whale.js';
+import { paintEmote } from './paint-emote.js';
 import { paletteOf } from './catalog.js';
 
 /* ───────── 贴图缓存（含透明度遮罩，用于像素级命中） ─────────

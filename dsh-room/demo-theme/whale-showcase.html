@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; object-src 'none'; base-uri 'none'">
+<title>大肥鱼外观试玩 · RoomKit</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #e6f2fb; color: #24334a; font: 14px system-ui, sans-serif; }
+  body { display: grid; grid-template-rows: auto minmax(0, 1fr); }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; padding: 10px 16px; background: #f6fbff; }
+  header a { color: #26486a; }
+  header button, header select { font: inherit; }
+  #room { position: relative; min-width: 0; }
+</style>
+</head>
+<body>
+<header>
+  <a href="/">返回我的小屋</a>
+  <strong>大肥鱼外观试玩</strong>
+  <label hidden>分件配色 <select id="rig-colors"></select></label>
+  <button id="legacy-walk" type="button" disabled>让旧版鲸鱼走两步</button>
+  <a href="https://github.com/Pal-AI-Lab/Coopanion/blob/5ac91144b1f1d2aeca2f0a79972d65fa2d4f2c03/packages/cortico-world-desktop-pet/THIRD_PARTY_NOTICES.md#L23-L30">外观来源与署名</a>
+</header>
+<main id="room"></main>
+<script src="{{rig}}"></script>
+<script src="{{packs}}"></script>
+<script src="{{showcase}}"></script>
+</body>
+</html>

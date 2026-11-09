@@ -10,17 +10,23 @@
  *     会花钱、能驱动房间的接口只走这里；webServer 的路由本身不带鉴权，所以上面两条只做本机来源校验、不放敏感能力。
  */
 import { readFile, writeFile, mkdir, rename, stat } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { WorkStatus } from './work-status.js';
 import { createChat } from './chat.js';
 import { RoomLink, roomTools } from './agent-tools.js';
+import { createDesktopProcess } from './desktop-process.js';
+import { supportsDesktopRuntime } from './desktop-runtime.js';
+import { createLocalHome } from './local-home.js';
+import { HOME_LIMIT } from '../shared/local-home-format.js';
 
 export const name = 'dsh-room';
 export const inject = ['webServer'];
 
 const WEB_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../web');
+const DESKTOP_ROOT = path.resolve(WEB_ROOT, '../desktop');
 const STATIC = '/plugins/dsh-room/web';
 const API = '/plugins/dsh-room/api/store';
 const INFO = '/plugins/dsh-room/api/info';
@@ -45,7 +51,7 @@ async function readStore() {
 /* 写入串行化 + 先写临时文件再改名，避免并发 PUT 互相覆盖或写坏文件 */
 let chain = Promise.resolve();
 function updateStore(fn) {
-  chain = chain.then(async () => {
+  const pending = chain.then(async () => {
     const data = await readStore();
     fn(data);
     const file = storeFile();
@@ -53,7 +59,8 @@ function updateStore(fn) {
     await writeFile(file + '.tmp', JSON.stringify(data));
     await rename(file + '.tmp', file);
   });
-  return chain;
+  chain = pending.catch(() => {});
+  return pending;
 }
 
 /** 防 DNS 重绑定和跨站：Host 必须是本机，带 Origin 时必须同源（webServer 不做来源校验，见 dsh-host-webserver 文档） */
@@ -87,7 +94,7 @@ async function serveStatic(req, res) {
   }
 }
 
-async function serveStore(req, res) {
+async function serveStore(req, res, home) {
   if (!isLocalRequest(req)) return send(res, 403, '{"ok":false}');
   if (req.method === 'GET') return send(res, 200, JSON.stringify(await readStore()));
   if (req.method !== 'PUT') return send(res, 405, '');
@@ -101,7 +108,9 @@ async function serveStore(req, res) {
   let msg;
   try { msg = JSON.parse(Buffer.concat(parts).toString('utf8')); } catch (e) { return send(res, 400, '{"ok":false}'); }
   if (!msg || typeof msg.key !== 'string' || !msg.key.startsWith('dsh-room.')) return send(res, 400, '{"ok":false}');
-  await updateStore((d) => { if (msg.value == null) delete d[msg.key]; else d[msg.key] = msg.value; });
+  const write = () => updateStore((d) => { if (msg.value == null) delete d[msg.key]; else d[msg.key] = msg.value; });
+  if (home && !await home.writeLegacy(write)) return send(res, 409, '{"ok":false,"error":"请重新打开房间以使用新版存档"}');
+  if (!home) await write();
   send(res, 200, '{"ok":true}');
 }
 
@@ -136,6 +145,30 @@ export function apply(ctx) {
   const link = new RoomLink();
   const chat = createChat(ctx);
   const toolSwitch = createToolSwitch(link);
+  const profile = typeof ctx.get === 'function' && ctx.get('profileContext', false)?.dir;
+  const directory = profile && path.join(profile, 'storages', 'dsh-room');
+  const home = directory && existsSync(path.join(WEB_ROOT, 'managed.html'))
+    ? createLocalHome({ directory, legacyFile: storeFile() }) : null;
+  let launch = null;
+  const desktop = home && supportsDesktopRuntime ? createDesktopProcess({
+    directory: path.join(directory, 'desktop'), entry: DESKTOP_ROOT, webRoot: WEB_ROOT,
+    onExit: handoff => home.desktopExited(handoff),
+    async onRequest(handoff, method, input, signal) {
+      if (method === 'claim') return home.acquireDesktop(input, handoff);
+      if (method === 'save') return home.save('desktop', input, handoff);
+      if (method === 'return' || method === 'rotate') return home.leaveDesktop(input, handoff, method === 'rotate');
+      if (method === 'cancel-model') return home.cancelModel('desktop', input, handoff);
+      if (method === 'model' || method === 'chat') {
+        const owner = await home.modelSignal('desktop', input, handoff);
+        if (method === 'model') return chat.status();
+        return chat.say(input.chat, AbortSignal.any([signal, owner]));
+      }
+      throw new Error('未知的桌面请求');
+    },
+  }) : null;
+  if (home) ctx.effect(() => () => {
+    void Promise.resolve(desktop?.stop()).finally(() => home.dispose()).catch(() => {});
+  }, 'dsh-room: local home');
 
   // 工作状态：只看事件类型和 todo 文案；插件 ctx 不带 scope，能收到所有会话的事件
   if (typeof ctx.on === 'function') {
@@ -147,16 +180,69 @@ export function apply(ctx) {
 
   const endpoints = {
     status: async (payload) => {
-      const commands = link.poll(payload && payload.room);
+      let canAct = !home || await home.active().then(value => !value, () => false);
+      if (home && payload?.home) canAct = await home.modelSignal('embed', payload.home).then(() => true, () => false);
+      const commands = canAct ? link.poll(payload?.room) : [];
       return Object.assign(work.snapshot(), { chat: chat.status(), tools: { enabled: toolSwitch.enabled, available: toolSwitch.available }, commands });
     },
-    chat: (payload, signal) => chat.say(payload, signal),
+    chat: async (payload, signal) => {
+      if (!home) return chat.say(payload, signal);
+      if (payload?.home) {
+        const owner = await home.modelSignal('embed', payload.home).catch(() => null);
+        if (owner) return chat.say(payload, AbortSignal.any([owner, signal]));
+      } else if (await home.active().then(active => !active, () => false)) {
+        return chat.say(payload, signal);
+      }
+      return { ok: false, error: '房间已交给另一个窗口，请重新打开房间' };
+    },
     tools: async (payload) => {
       const enabled = toolSwitch.set(!!(payload && payload.enabled));
       await writeHostPrefs(Object.assign(await readHostPrefs(), { tools: enabled }));
       return { enabled };
     },
   };
+  if (home) {
+    endpoints.home = async (payload, _, request) => {
+      const url = new URL(request.url);
+      const headers = Object.fromEntries(request.headers);
+      if (!isLocalRequest({ headers: { ...headers, host: headers.host || url.host } })) {
+        return { ok: false, code: 'unavailable', error: '请在本机使用桌面窗口' };
+      }
+      try {
+        let state;
+        switch (payload?.action) {
+          case 'claim': state = await home.acquire(payload); break;
+          case 'status': state = await home.status(payload); break;
+          case 'save': await home.save('embed', payload); break;
+          case 'release': await home.release(payload); break;
+          case 'desktop': {
+            if (!desktop || !['idle', 'error'].includes(desktop.status().phase) || launch) {
+              return { ok: false, error: '桌面窗口暂时不可用，请稍后再试' };
+            }
+            const transfer = { view: payload.view };
+            launch = transfer;
+            try { transfer.handoff = await home.beginDesktop(payload); }
+            catch (error) { launch = null; throw error; }
+            void desktop.start(transfer.handoff)
+              .catch(() => home.desktopExited(transfer.handoff))
+              .finally(() => { if (launch === transfer) launch = null; });
+            break;
+          }
+          case 'cancel':
+            if (launch?.view === payload.view && launch.handoff) await desktop.stop();
+            break;
+          default: return { ok: false, error: '未知的房间操作' };
+        }
+        return { ok: true, ...state, available: Boolean(desktop), desktop: desktop?.status(), canCancel: Boolean(launch?.view === payload.view && launch?.handoff) };
+      } catch (error) {
+        if (!['stale', 'invalid', 'too_large', 'busy'].includes(error.code)) {
+          console.error('[dsh-room] 本机存档操作失败', error.code || error.name);
+          return { ok: false, error: '房间存档暂时无法读取或保存，原存档已保留' };
+        }
+        return { ok: false, code: error.code, error: error.message };
+      }
+    };
+  }
   if (typeof ctx.inject === 'function') {
     // 精确路由挂在 DSH 的 /api 下：鉴权由 connection 做完才轮到这里；注销跟着本插件的 effect 走
     ctx.inject(['connection'], (scope) => {
@@ -165,8 +251,14 @@ export function apply(ctx) {
           path: API_PREFIX + ep, methods: ['POST'], requestBody: 'buffered',
           async fetch(request) {
             let payload = null;
-            try { payload = await request.json(); } catch (e) { return Response.json({ ok: false, error: 'body is not JSON' }, { status: 400 }); }
-            return Response.json(await run(payload, request.signal), { headers: { 'cache-control': 'no-store' } });
+            try {
+              if (ep === 'home') {
+                const body = await request.text();
+                if (Buffer.byteLength(body) > HOME_LIMIT + 65536) return Response.json({ ok: false, code: 'too_large', error: '房间存档过大' }, { status: 413 });
+                payload = JSON.parse(body);
+              } else payload = await request.json();
+            } catch (e) { return Response.json({ ok: false, error: 'body is not JSON' }, { status: 400 }); }
+            return Response.json(await run(payload, request.signal, request), { headers: { 'cache-control': 'no-store' } });
           },
         }), 'dsh-room: ' + ep);
       }
@@ -179,7 +271,7 @@ export function apply(ctx) {
   }
 
   ctx.effect(() => ctx.webServer.register({ kind: 'prefix', path: STATIC, handler: serveStatic }), 'dsh-room: static');
-  ctx.effect(() => ctx.webServer.register({ kind: 'exact', path: API, handler: serveStore }), 'dsh-room: store');
+  ctx.effect(() => ctx.webServer.register({ kind: 'exact', path: API, handler: (req, res) => serveStore(req, res, home) }), 'dsh-room: store');
   // dsh-app:// 页面不能直接作为浏览器预览地址；只返回当前宿主的本机静态页面，不含凭据。
   ctx.effect(() => ctx.webServer.register({ kind: 'exact', path: INFO, handler(req, res) {
     if (req.method !== 'GET') return send(res, 405, '');

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
+import { webcrypto } from 'node:crypto';
 import { apply as applyHost } from '../lib/index.js';
 
 const root = new URL('../', import.meta.url);
@@ -29,7 +30,7 @@ for (const sidebar of [false, true]) {
   test(`DSH ${sidebar ? '有' : '无'}侧栏时，常驻入口和插件页都注册`, async () => {
     let registration;
     const window = { addEventListener() {}, removeEventListener() {}, __ModuleLoader__: { load: info => { registration = info; } } };
-    vm.runInNewContext(await readFile(new URL('lib/client.js', root), 'utf8'), { window, console, setTimeout, clearTimeout });
+    vm.runInNewContext(await readFile(new URL('lib/client.js', root), 'utf8'), { window, console, setTimeout, clearTimeout, TextEncoder, crypto: webcrypto });
     assert.equal(registration.id, 'dsh-room');
     const jsx = (type, props) => ({ type, props });
     const plugin = registration.factory(id => {

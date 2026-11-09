@@ -8,6 +8,11 @@
  * hidden：0 正常 · 1 被隐藏（举报或管理员） · 2 待审核（只有作者看得到） · 3 已删除
  */
 
+import { createWorldStore } from './world-store.mjs';
+import { createAccountStore } from './account-store.mjs';
+
+export function backupDatabase(db, file) { db.prepare('VACUUM INTO ?').run(file); }
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, provider TEXT, login TEXT, name TEXT, avatar TEXT, created INTEGER, seen INTEGER);
 CREATE TABLE IF NOT EXISTS sessions (hash TEXT PRIMARY KEY, account TEXT NOT NULL, created INTEGER, expires INTEGER);
@@ -21,6 +26,11 @@ CREATE TABLE IF NOT EXISTS roles (member TEXT, role TEXT, scope TEXT DEFAULT '',
 CREATE TABLE IF NOT EXISTS bans (member TEXT PRIMARY KEY, kind TEXT, until INTEGER, reason TEXT, by TEXT, t INTEGER);
 CREATE TABLE IF NOT EXISTS mod_log (id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT, action TEXT, target TEXT, detail TEXT, t INTEGER);
 `;
+const THREAD_ORDER = {
+  active: 'last + min(likes, 50) * 600000',
+  new: 't',
+  hot: '(likes * 3 + posts) / pow(max(0, (? - last) / 3600000.0) + 2, 1.5)',
+};
 // 旧库（T1）补列
 const MIGRATIONS = ['ALTER TABLE threads ADD COLUMN locked INTEGER DEFAULT 0', 'ALTER TABLE posts ADD COLUMN labels TEXT', 'ALTER TABLE members ADD COLUMN account TEXT'];
 
@@ -32,17 +42,30 @@ export async function openStore(file = ':memory:') {
   for (const m of MIGRATIONS) { try { db.exec(m); } catch (e) { /* 列已存在 */ } }
   const cache = new Map();
   const q = (sql) => { if (!cache.has(sql)) cache.set(sql, db.prepare(sql)); return cache.get(sql); };
-  const tx = (fn) => { db.exec('BEGIN'); try { const r = fn(); db.exec('COMMIT'); return r; } catch (e) { db.exec('ROLLBACK'); throw e; } };
+  const tx = (fn) => { db.exec('BEGIN IMMEDIATE'); try { const r = fn(); db.exec('COMMIT'); return r; } catch (e) { db.exec('ROLLBACK'); throw e; } };
+  tx(() => {
+    if (!q('PRAGMA table_info(threads)').all().some(({ name }) => name === 'owner_account')) {
+      db.exec('ALTER TABLE threads ADD COLUMN owner_account TEXT');
+      db.exec('UPDATE threads SET owner_account = COALESCE((SELECT account FROM members WHERE id = threads.owner), owner) WHERE owner IS NOT NULL');
+    }
+    db.exec('CREATE INDEX IF NOT EXISTS threads_owner_account_time ON threads (owner_account, t)');
+  });
 
   const member = (r) => r && { id: r.id, key: r.key, name: r.name, kind: r.kind, look: JSON.parse(r.look || '{}'), account: r.account || r.id };
   const account = (r) => r && { id: r.id, provider: r.provider, login: r.login, name: r.name, avatar: r.avatar };
-  const thread = (r) => r && { id: r.id, title: r.title, owner: r.owner, scene: r.scene ? JSON.parse(r.scene) : null, sceneRef: r.scene_ref, t: r.t, last: r.last, posts: r.posts, likes: r.likes, hidden: r.hidden, locked: !!r.locked };
+  const threadSummary = (r) => r && { id: r.id, title: r.title, owner: r.owner, ownerAccount: r.owner_account, t: r.t, last: r.last, posts: r.posts, likes: r.likes, hidden: r.hidden, locked: !!r.locked };
   const post = (r) => r && { id: r.id, thread: r.thread, by: r.by, text: r.text, acts: JSON.parse(r.acts || '[]'), human: !!r.human, t: r.t, likes: r.likes, hidden: r.hidden, labels: JSON.parse(r.labels || '[]') };
 
+  let accounts;
   return {
+    transaction: tx,
+    world: createWorldStore({ db, q, tx }),
+    // 首次访问时才建账户表：createTown 启动时会读取它，只开库的工具和备份不受影响
+    get accountStore() { return (accounts ??= createAccountStore({ db, q, tx })); },
     member: (id) => member(q('SELECT * FROM members WHERE id = ?').get(id)),
     putMember: (m) => { q('INSERT INTO members (id, key, name, kind, look, created, account) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO UPDATE SET name = excluded.name, kind = excluded.kind, look = excluded.look').run(m.id, m.key || '', m.name, m.kind, JSON.stringify(m.look || {}), Date.now(), m.account || m.id); },
     charactersOf: (acc) => q('SELECT * FROM members WHERE account = ? ORDER BY created').all(acc).map(member),
+    characterCount: (acc) => q('SELECT COUNT(*) AS n FROM members WHERE account = ?').get(acc).n,
     deleteMember: (id) => { q('DELETE FROM members WHERE id = ?').run(id); },
 
     account: (id) => account(q('SELECT * FROM accounts WHERE id = ?').get(id)),
@@ -55,17 +78,26 @@ export async function openStore(file = ':memory:') {
     endSession: (hash) => { q('DELETE FROM sessions WHERE hash = ?').run(hash); },
     endSessionsOf: (acc) => { q('DELETE FROM sessions WHERE account = ?').run(acc); },
 
-    thread: (id) => thread(q('SELECT * FROM threads WHERE id = ?').get(id)),
-    threads: () => q('SELECT * FROM threads WHERE hidden = 0 ORDER BY last DESC LIMIT 200').all().map(thread),
-    threadsBy: (owner, since) => q('SELECT COUNT(*) AS n FROM threads WHERE owner = ? AND t > ?').get(owner, since).n,
-    putThread: (t) => { q('INSERT INTO threads (id, title, owner, scene, scene_ref, t, last) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING').run(t.id, t.title, t.owner, t.scene ? JSON.stringify(t.scene) : null, t.sceneRef || null, t.t, t.last || t.t); },
+    thread: (id) => {
+      const row = q('SELECT * FROM threads WHERE id = ?').get(id);
+      return row && { ...threadSummary(row), scene: row.scene ? JSON.parse(row.scene) : null, sceneRef: row.scene_ref };
+    },
+    threads: (sort = 'active', limit = 200, offset = 0) => {
+      if (!Object.hasOwn(THREAD_ORDER, sort)) sort = 'active';
+      const args = sort === 'hot' ? [Date.now(), limit, offset] : [limit, offset];
+      return q(`SELECT id, title, owner, owner_account, t, last, posts, likes, hidden, locked FROM threads WHERE hidden = 0 ORDER BY ${THREAD_ORDER[sort]} DESC, last DESC, id LIMIT ? OFFSET ?`).all(...args).map(threadSummary);
+    },
+    threadCount: () => q('SELECT COUNT(*) AS n FROM threads WHERE hidden = 0').get().n,
+    threadsBy: (accountId, since) => q('SELECT COUNT(*) AS n FROM threads WHERE owner_account = ? AND t > ?').get(accountId, since).n,
+    putThread: (t) => { q('INSERT INTO threads (id, title, owner, owner_account, scene, scene_ref, t, last) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING').run(t.id, t.title, t.owner, t.ownerAccount || t.owner, t.scene ? JSON.stringify(t.scene) : null, t.sceneRef || null, t.t, t.last || t.t); },
     setThread: (id, patch) => {
       if ('hidden' in patch) q('UPDATE threads SET hidden = ? WHERE id = ?').run(patch.hidden, id);
       if ('locked' in patch) q('UPDATE threads SET locked = ? WHERE id = ?').run(patch.locked ? 1 : 0, id);
     },
 
     post: (id) => post(q('SELECT * FROM posts WHERE id = ?').get(id)),
-    addPost: (p) => tx(() => {
+    addPost: (p, checkAccess) => tx(() => {
+      checkAccess?.();
       q('INSERT INTO posts (id, thread, by, text, acts, human, t, hidden, labels) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(p.id, p.thread, p.by, p.text, JSON.stringify(p.acts), p.human ? 1 : 0, p.t, p.hidden || 0, JSON.stringify(p.labels || []));
       if (!p.hidden) q('UPDATE threads SET posts = posts + 1, last = ? WHERE id = ?').run(p.t, p.thread);
     }),
@@ -116,7 +148,7 @@ export async function openStore(file = ':memory:') {
     logs: (n = 50) => q('SELECT * FROM mod_log ORDER BY id DESC LIMIT ?').all(n).map((r) => ({ actor: r.actor, action: r.action, target: r.target, detail: JSON.parse(r.detail || '{}'), t: r.t })),
 
     /** 在线备份成一个独立的数据库文件（服务不停） */
-    backup: (file) => { db.prepare('VACUUM INTO ?').run(file); },
+    backup: (file) => backupDatabase(db, file),
     close: () => db.close(),
   };
 }

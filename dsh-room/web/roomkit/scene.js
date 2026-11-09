@@ -28,7 +28,7 @@ export function normalizeObj(o) {
 
 export function normalizeAgent(a, room) {
   return Object.assign({
-    id: uid('a'), name: '鲸鱼娘', kind: 'girl', brain: 'auto', look: {},
+    id: uid('a'), name: '角色', kind: 'girl', brain: 'auto', look: {},
     x: room ? room.w / 2 : 2, y: room ? room.h / 2 : 2,
   }, clone(a));
 }
@@ -37,7 +37,7 @@ export function normalizeScene(raw) {
   const src = raw || {};
   const s = clone(src);
   s.format = 'roomkit.scene';
-  // v1（2026-11-04 那版）里角色只有 kind:'whale' 一种，指的就是鲸鱼娘本人：升到 v2 时统一改成 'girl'，
+  // v1（2026-11-04 那版）里角色只有 kind:'whale' 一种，指的就是旧版主角：升到 v2 时统一改成 'girl'，
   // 不然旧存档打开全是圆滚滚的小鲸鱼。v2 起 'whale' 才表示真的小鲸鱼宠物。
   if (!(src.v >= 2)) (s.agents || []).forEach((a) => { if (!a.kind || a.kind === 'whale') a.kind = 'girl'; });
   s.v = 2;
@@ -222,6 +222,7 @@ export class World extends Emitter {
   /* ───────── 编辑：唯一入口 ───────── */
 
   apply(op, opts) {
+    if (this.allowApply && !this.allowApply()) return null;
     const silent = opts && opts.silent;
     let inv = null;
     const sc = this.scene;

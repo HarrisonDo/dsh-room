@@ -9,7 +9,10 @@
  *   app.ext.social           → [{ id, label, sub, on(), toggle() }]  「社区」页的开关
  *   app.ext.openFull()       → 在新窗口/全屏打开房间
  */
+import { APPEARANCE_NOTICE } from './default-characters.js';
 import { esc } from './ui.js';
+import { WorldPanel } from './world-panel.js';
+import { WorldHub } from './world-hub.js';
 import { PERIODS, WEATHERS } from './env.js';
 import { clone, uid, delay } from './util.js';
 import { isFollower } from './home.js';
@@ -27,6 +30,13 @@ const PAGES = [
   { id: 'chat', icon: '💬', label: '聊天' },
   { id: 'map', icon: '🗺', label: '地图' },
   { id: 'social', icon: '👥', label: '社区' },
+];
+// 网页版只留最常用的四项；剧情和地图在「更多」和房间菜单里
+const SITE_PAGES = [
+  { id: 'play', icon: '🏠', label: '家' },
+  { id: 'edit', icon: '🛠', label: '布置' },
+  { id: 'social', icon: '🌐', label: '世界' },
+  { id: 'chat', icon: '💬', label: '聊天' },
 ];
 const PAGE_TITLE = { story: '剧情', chat: '聊天', map: '家 · 地图', social: '社区', town: 'AI 小镇 · 帖子', 'town-admin': 'AI 小镇 · 管理', conn: '连接与状态', about: '关于' };
 const STATUS_TEXT = { thinking: '思考中', working: '干活中', result: '整理结果', waiting: '等你回复', success: '完成啦', error: '出错了' };
@@ -71,17 +81,22 @@ export class Shell {
       <div class="rk-coach"></div>
       <div class="rk-curtain" aria-hidden="true"><i></i><i></i><b></b></div>
       <div class="rk-flash" aria-live="polite"></div>
-      <nav class="rk-dock">${PAGES.map((p) => `<button data-page="${p.id}" title="${p.label}"><span>${p.icon}</span><small>${p.label}</small></button>`).join('')}</nav>
+      <div class="rk-world-chip" aria-live="polite"></div>
+      <nav class="rk-dock">${(app.opts.site ? SITE_PAGES : PAGES).map((p) => `<button data-page="${p.id}" title="${p.label}"><span>${p.icon}</span><small>${p.label}</small></button>`).join('')}</nav>
       <aside class="rk-sheet"><header><b></b><button class="rk-x" data-s="close">×</button></header><div class="rk-sheet-body"></div></aside>`);
     const $ = (s) => root.querySelector(s);
     this.el = {
       top: $('.rk-top'), rooms: $('.rk-rooms'), menu: $('.rk-menu'), dock: $('.rk-dock'), sheet: $('.rk-sheet'), title: $('.rk-sheet header b'),
-      body: $('.rk-sheet-body'), pill: $('.rk-story-pill'), coach: $('.rk-coach'), curtain: $('.rk-curtain'), flash: $('.rk-flash'),
+      body: $('.rk-sheet-body'), pill: $('.rk-story-pill'), coach: $('.rk-coach'), curtain: $('.rk-curtain'), flash: $('.rk-flash'), chip: $('.rk-world-chip'),
     };
+    this.worldPanel = new WorldPanel(this);
+    this.hub = app.opts.site ? new WorldHub(this) : null;
+    if (app.opts.site) root.classList.add('rk-site');
     root.addEventListener('click', (e) => this._onClick(e));
     root.addEventListener('keydown', (e) => {
       if (e.target && e.target.matches && e.target.matches('.rk-chat-in') && e.key === 'Enter' && !e.isComposing) { e.preventDefault(); this._sendChat(); }
       if (e.target && e.target.matches && e.target.matches('.rk-town-in') && e.key === 'Enter' && !e.isComposing) { e.preventDefault(); this._townSay(); }
+      if (e.target?.matches?.('.rk-world-say') && e.key === 'Enter' && !e.isComposing) { e.preventDefault(); this.worldPanel.action('say'); }
       if (e.target && e.target.matches && e.target.matches('[data-menu-in]') && e.key === 'Enter' && !e.isComposing) { e.preventDefault(); this._menuInput(e.target); }
       if (e.key === 'Escape' && this.menu) { e.stopPropagation(); this.closeMenu(); }
     }, true);
@@ -121,7 +136,7 @@ export class Shell {
   /** 连接灯：绿 = 宿主在线且有工作状态来源；黄 = 宿主在线；灰 = 纯本地 */
   syncConn() {
     const app = this.app, btn = this.el.top.querySelector('.rk-conn');
-    const c = (app.ext && app.ext.connection && app.ext.connection()) || { level: 'local', label: '本地' };
+    const c = this.hub ? this.hub.connection() : (app.ext && app.ext.connection && app.ext.connection()) || { level: 'local', label: '本地' };
     btn.setAttribute('data-level', c.level);
     btn.querySelector('span').textContent = c.label;
     btn.title = '连接与状态：' + (c.detail || c.label);
@@ -142,6 +157,7 @@ export class Shell {
     if (!show) this.el.pill._id = null;
     if (this.page === 'conn' && performance.now() - this._diagAt > 2000) this._renderConn();
     if ((this._syncT = (this._syncT || 0) + 1) % 60 === 0) this.syncConn();
+    this.hub?.syncChip();
   }
 
   /** 剧情（开场 / 到点）：默认只给提示条；用户在设置里选了"自动播放"才直接演 */
@@ -152,9 +168,10 @@ export class Shell {
 
   /** 第一次打开：告诉用户能点哪里（只出现一次） */
   coach() {
+    if (this.hub) { this.hub.welcome(); return; }
     if (this.app.storage.pref('coached') || this.app.opts.coach === false) return;
     const el = this.el.coach;
-    el.innerHTML = `<b>欢迎来到${esc(this.app.home ? this.app.home.name : this.app.world.scene.name || '房间')}！</b><br>点点<span>角色</span>和<span>家具</span>试试；点地面让她走过去，滚轮缩放、拖动平移。<br>左上角换房间（数字键 1–9），点<span>门</span>可以去隔壁。<br>底部菜单：🛠 布置 · 📖 剧情 · 💬 聊天 · 🗺 地图<button class="rk-btn" data-s="coach-ok">知道了</button>`;
+    el.innerHTML = `<b>欢迎来到${esc(this.app.home ? this.app.home.name : this.app.world.scene.name || '房间')}！</b><br>点点<span>角色</span>和<span>家具</span>试试；点地面让她走过去，滚轮缩放、拖动平移。<br>左上角换房间（数字键 1–9），左键点<span>门</span>直接过去，右键打开门旁菜单。<br>底部菜单：🛠 布置 · 📖 剧情 · 💬 聊天 · 🗺 地图<button class="rk-btn" data-s="coach-ok">知道了</button>`;
     el.classList.add('on');
   }
 
@@ -219,6 +236,7 @@ export class Shell {
     return `
       <button data-menu="names"><span>🏷</span>显示名字${check(app.renderer.showNames)}</button>
       <button data-menu="fit"><span>⤢</span>复位视角<small>F</small></button>
+      ${this.hub ? '<button data-menu="story"><span>📖</span>剧情</button><button data-menu="map"><span>🗺</span>地图<small>M</small></button>' : ''}
       <button data-menu="sound"><span>${app.soundOn ? '🔊' : '🔈'}</span>声音${check(app.soundOn)}</button>
       <button data-menu="follow"><span>🐋</span>角色跟着我换房间${check(app.home.follow)}</button>
       <button data-menu="auto-story"><span>📖</span>剧情自动开演${check(!!app.storage.pref('autoStory'))}</button>
@@ -250,6 +268,7 @@ export class Shell {
     const app = this.app, a = t.getAttribute('data-menu'), id = t.getAttribute('data-id');
     switch (a) {
       case 'map': this.closeMenu(); this.open('map'); return;
+      case 'story': this.closeMenu(); this.open('story'); return;
       case 'new-room': this.closeMenu(); this.open('map'); setTimeout(() => { const s = this.el.body.querySelector('.rk-addroom'); if (s) s.scrollIntoView({ block: 'center' }); }, 30); return;
       case 'add-cur': app.home.add(app.world.scene, app.home.data.floors[app.home.data.floors.length - 1]); this.closeMenu(); this.sync(); app.hud.toast('已加入家'); return;
       case 'names': app.renderer.showNames = !app.renderer.showNames; break;
@@ -277,13 +296,18 @@ export class Shell {
   open(page) {
     const app = this.app;
     this.closeMenu();
-    if (page === 'edit') { this.close(); app.setMode('edit'); return; }
+    if (page === 'edit') {
+      this.close();
+      app.setMode('edit');
+      if (this.hub && !this._saveHinted) { this._saveHinted = true; app.hud.toast(app.storage.failed ? '这个浏览器无法保存，当前只是临时体验' : '布置会自动保存在这个浏览器', 3200); }
+      return;
+    }
     if (page === 'play') { this.close(); if (app.mode === 'edit') app.setMode('play'); return; }
     if (app.mode === 'edit') app.setMode('play');
     if (this.page === page) { this.close(); return; }
     this.page = page;
     app.hud.closeCard(); app.hud.closeDrawer();
-    this.el.title.textContent = PAGE_TITLE[page] || page;
+    this.el.title.textContent = (this.hub && page === 'social' ? '世界' : page === 'legacy' ? '旧社区与世界创作' : PAGE_TITLE[page]) || page;
     this.el.sheet.className = 'rk-sheet on rk-sheet-' + page;
     this.render();
     this.sync();
@@ -300,7 +324,8 @@ export class Shell {
     if (p === 'story') this._renderStory();
     else if (p === 'map') this._renderMap();
     else if (p === 'chat') this._renderChat();
-    else if (p === 'social') this._renderSocial();
+    else if (p === 'social') this.hub ? this._renderHub() : this._renderSocial();
+    else if (p === 'legacy') this._renderSocial();
     else if (p === 'town') this._renderTown();
     else if (p === 'town-admin') this._renderTownAdmin();
     else if (p === 'conn') this._renderConn();
@@ -382,7 +407,7 @@ export class Shell {
         <div class="rk-mapcard rk-mapnew" data-map-new="room"><span>＋</span><b>空房间</b></div>
         <div class="rk-mapcard rk-mapnew" data-map-new="open"><span>🌳</span><b>露天广场</b></div></div>
       ${outside.length ? `<div class="rk-field">不在家里的场景（${outside.length}）</div><div class="rk-mapgrid">${outside.map((s) => scenes.get(s.id) ? card(scenes.get(s.id), null) : '').join('')}</div>` : ''}
-      <div class="rk-hint">点门可以去隔壁房间；门通往哪里在门的卡片里改。🛠 布置 → 场景 里可以导入导出、复制、删除场景。</div>`;
+      <div class="rk-hint">左键点门直接换房间；右键点门，在门旁菜单里改目的地或开关门。🛠 布置 → 场景 里可以导入导出、复制、删除场景。</div>`;
     this.el.body.querySelectorAll('[data-thumb-scene]').forEach((c) => { const s = scenes.get(c.getAttribute('data-thumb-scene')); drawSceneThumb(c, s && s.room ? view(s) : s); });
   }
 
@@ -436,13 +461,27 @@ export class Shell {
   _townSection() {
     const town = this.app.town;
     if (!town) return '';
+    if (this.app.worldSession?.id) return this.worldPanel.renderSession();
+    if (this.app.worldDrafts?.view.home) return '<div class="rk-field">世界预览</div><button class="rk-btn" data-s="world-preview-close">回到自己的房间</button>';
+    const worlds = this.worldPanel.renderHome();
     const head = '<div class="rk-field">AI 小镇（本机原型）</div><div class="rk-hint" style="margin-top:0">一个帖子就是一个场景。角色进帖子后会自己回帖、在场景里做出反应；你也可以用角色的身份说话。</div>';
     if (!town.online) {
       const needLogin = town.cfg && !town.cfg.legacy && !town.token;
-      const login = needLogin ? `<div class="rk-field">登录小镇</div>${town.cfg.providers.length ? town.cfg.providers.map((p) => `<button class="rk-btn on" data-town-login="${esc(p.id)}">用 ${esc(p.label)} 登录</button> `).join('') : '<div class="rk-hint">这个小镇还没开放登录。</div>'}
-        <div class="rk-hint">${town.loggingIn ? '在弹出的窗口里完成授权…' : '登录后，你房间里的主角就是你在小镇上的角色。'}</div>` : '';
-      return head + `<div class="rk-chat-bar"><input class="rk-town-url" type="text" value="${esc(town.url)}"><button class="rk-btn${needLogin ? '' : ' on'}" data-s="town-connect">连接</button></div>${login}
-        ${town.error ? `<div class="rk-hint">${esc(town.error)}</div>` : needLogin ? '' : '<div class="rk-hint">先在 dsh-room 目录运行 <code>npm run town</code>。</div>'}`;
+      let login = '';
+      if (needLogin) {
+        login = '<div class="rk-field">登录小镇</div>';
+        if (town.loginAttempt) {
+          const link = town.loginAttempt.fallbackUrl;
+          if (link) login += `<a class="rk-link" href="${esc(link)}" target="_blank" rel="noopener noreferrer">在浏览器打开授权</a> `;
+          login += '<button class="rk-btn" data-s="town-login-cancel">取消登录</button><div class="rk-hint">在浏览器完成授权后回到房间。</div>';
+        } else {
+          login += town.cfg.providers.length ? town.cfg.providers.map((p) => `<button class="rk-btn on" data-town-login="${esc(p.id)}">用 ${esc(p.label)} 登录</button> `).join('') : '<div class="rk-hint">这个小镇还没开放登录。</div>';
+          login += '<div class="rk-hint">登录后，你房间里的主角就是你在小镇上的角色。</div>';
+        }
+      }
+      const address = town.fixed ? '' : `<div class="rk-chat-bar"><input class="rk-town-url" type="text" value="${esc(town.url)}"><button class="rk-btn${needLogin ? '' : ' on'}" data-s="town-connect">连接</button></div>`;
+      return worlds + head + `${address}${login}
+        ${town.error ? `<div class="rk-hint">${esc(town.error)}</div>` : needLogin || town.fixed ? '' : '<div class="rk-hint">先在 dsh-room 目录运行 <code>npm run town</code>。</div>'}`;
     }
     const acct = town.account ? `<div class="rk-kv"><span>已登录：<b>${esc(town.account.name || town.account.login || town.account.id)}</b> <small>${esc(town.account.id)}</small></span><a href="#" class="rk-link" data-s="town-logout">退出</a></div>` : '';
     const SORT = { active: '活跃', new: '最新', hot: '最热' }, cur = town.sort || 'active';
@@ -453,7 +492,8 @@ export class Shell {
     const memory = `<div class="rk-field">🧠 ${esc((town.myAgent() || town.self || {}).name || '她')}的记忆 <small>（存在这台电脑上，不上传）</small></div>
       <div class="rk-kv"><span>认识 ${ms.people} 位 · 记了 ${ms.events} 件事</span><span><a href="#" class="rk-link" data-s="mem-toggle">${open ? '收起' : '查看'}</a> · <a href="#" class="rk-link" data-s="mem-export">导出</a> · <a href="#" class="rk-link" data-s="mem-import">导入</a> · <a href="#" class="rk-link" data-s="mem-clear">清空</a></span></div>
       ${open ? L.people.map((p) => `<div class="rk-kv"><span><b>${esc(p.name)}</b> <small>见过 ${p.met} 次${p.impression ? ' · ' + esc(p.impression) : ''}</small></span><a href="#" class="rk-link" data-mem-forget="${esc(p.id)}">忘掉</a></div>`).join('') + L.events.slice(0, 10).map((e) => `<div class="rk-hint" style="margin:2px 0">「${esc(e.title)}」${esc(e.summary)}</div>`).join('') : ''}`;
-    return head + acct + rows + admin + memory + `<div class="rk-chat-bar" style="margin-top:8px"><input class="rk-town-title" type="text" maxlength="40" placeholder="新帖标题（用当前房间当场景）"><button class="rk-btn" data-s="town-new">开帖</button></div>`;
+    const more = town.nextOffset == null ? '' : '<button class="rk-btn" data-s="town-more">加载更多帖子</button>';
+    return worlds + head + acct + rows + more + admin + memory + `<div class="rk-chat-bar" style="margin-top:8px"><input class="rk-town-title" type="text" maxlength="40" placeholder="新帖标题（用当前房间当场景）"><button class="rk-btn" data-s="town-new">开帖</button></div>`;
   }
 
   /** 帖子页：回帖记录 = 场景里发生的对话；输入框以我的角色身份发言 */
@@ -488,7 +528,7 @@ export class Shell {
     try { q = await town.adminQueue(); } catch (e) { body.innerHTML = `<div class="rk-hint">${esc(e.message)}</div>`; return; }
     if (this.page !== 'town-admin') return;
     const staff = town.isStaff();
-    const item = (x, target, btns) => `<div class="rk-admin-item"><div><b>${esc(x.by ? x.by.name : '?')}</b> <small>${esc(x.by ? x.by.id : '')} · ${x.kind === 't' ? '帖子标题' : '回帖'} · ${esc(x.thread)}${x.human ? ' · 主人代说' : ''}</small></div><div>${esc(x.text)}</div>
+    const item = (x, target, btns) => `<div class="rk-admin-item"><div><b>${esc(x.by ? x.by.name : '?')}</b> <small>${esc(x.by ? x.by.id : '')} · ${{ t: '帖子标题', w: '场次发言' }[x.kind] || '回帖'} · ${esc(x.thread)}${x.human ? ' · 主人代说' : ''}</small></div><div>${esc(x.text)}</div>
       <div class="rk-admin-btns">${btns.map(([a, l]) => `<button class="rk-btn" data-town-act="${a}" data-target="${esc(target)}">${l}</button>`).join('')}${staff && x.by ? `<button class="rk-btn" data-town-act="mute" data-target="m:${esc(x.by.id)}" data-days="1">禁言 1 天</button><button class="rk-btn" data-town-act="mute" data-target="m:${esc(x.by.id)}" data-days="7">7 天</button><button class="rk-btn" data-town-act="ban" data-target="m:${esc(x.by.id)}">封号</button>` : ''}</div></div>`;
     const ROLE = { owner: '站长', admin: '管理员', mod: '版主' };
     body.innerHTML = `
@@ -496,7 +536,7 @@ export class Shell {
       <div class="rk-field">举报（${q.reports.length}）</div>
       ${q.reports.map((r) => `<div class="rk-hint" style="margin:6px 0 0">${r.n} 人举报：${esc(r.reasons.join('、'))}${r.notes ? ' · ' + esc(r.notes) : ''}${r.item.hidden ? ' · 已自动隐藏' : ''}</div>` + item(r.item, r.target, [['restore', '恢复并驳回'], ['dismiss', '驳回'], ['hide', '隐藏'], ['delete', '删除']])).join('') || '<div class="rk-hint">没有待处理的举报</div>'}
       <div class="rk-field">待审核（${q.pending.length}）</div>
-      ${q.pending.map((r) => item(r.item, r.target, [['approve', '通过'], ['delete', '删除']])).join('') || '<div class="rk-hint">没有待审核的回帖</div>'}
+      ${q.pending.map((r) => item(r.item, r.target, [['approve', '通过'], ['delete', '删除']])).join('') || '<div class="rk-hint">没有待审核的发言</div>'}
       ${staff ? `
       <div class="rk-field">权限</div>
       ${q.staff.map((r) => `<div class="rk-kv"><span>${esc(r.name)} <small>${esc(r.member)}</small></span><span>${ROLE[r.role]}${r.scope ? '：' + esc(r.scope) : ''} ${r.role !== 'owner' ? `<a href="#" class="rk-link" data-town-act="revoke" data-target="m:${esc(r.member)}" data-role="${r.role}" data-scope="${esc(r.scope)}">撤销</a>` : ''}</span></div>`).join('')}
@@ -520,13 +560,40 @@ export class Shell {
     try { await fn(); } catch (e) { this.app.hud.toast(e.message, 3000); }
   }
 
+  /** 网页版世界页：内容没变就不重建，保留输入焦点和滚动位置 */
+  _renderHub() {
+    const body = this.el.body;
+    this.hub.rememberForm(body);
+    const html = this.hub.render();
+    if (this._hubHtml === html && body.dataset.hub === '1') return;
+    this._hubHtml = html;
+    body.dataset.hub = '1';
+    body.innerHTML = html;
+    this.hub.afterRender(body);
+    if (this.hub.loaded === false && !this._hubLoading) { this._hubLoading = true; this.hub.load().finally(() => { this._hubLoading = false; }); }
+  }
+
   _renderSocial() {
+    delete this.el.body.dataset.hub;
     const app = this.app, items = (app.ext && app.ext.social) || [];
+    this.worldPanel.rememberForm();
+    const previous = this.el.body.querySelector('.rk-world-say');
+    const focused = previous && document.activeElement === previous;
+    const experienceOpen = this.el.body.querySelector('.rk-world-experiences')?.open;
     this.el.body.innerHTML = `
       ${items.length ? `<div class="rk-field">在 DSH 里</div>${items.map((it) => `<label class="rk-check rk-opt"><input type="checkbox" data-social="${esc(it.id)}" ${it.on() ? 'checked' : ''}><span><b>${esc(it.label)}</b><small>${esc(it.sub || '')}</small></span></label>`).join('')}` : ''}
       <div class="rk-field">这个房间里的角色（${app.agents.size}）</div>
       ${[...app.agents.values()].map((a) => `<div class="rk-kv"><span>${esc(a.name)}</span><span>${esc(a.status ? STATUS_TEXT[a.status.state] || a.status.state : a.activity || '')}</span></div>`).join('')}
       ${this._townSection()}`;
+    const input = this.el.body.querySelector('.rk-world-say');
+    if (previous && input) {
+      input.value = previous.value;
+      if (focused) { input.focus(); input.setSelectionRange(previous.selectionStart, previous.selectionEnd); }
+    }
+    if (experienceOpen) {
+      const details = this.el.body.querySelector('.rk-world-experiences');
+      if (details) details.open = true;
+    }
   }
 
   _renderConn() {
@@ -553,12 +620,10 @@ export class Shell {
 
   _renderAbout() {
     this.el.body.innerHTML = `
-      <div class="rk-kv"><span>引擎</span><span>RoomKit ${esc(VERSION)}（MIT）</span></div>
+      <div class="rk-kv"><span>引擎</span><span>RoomKit ${esc(VERSION)}（AGPL-3.0）</span></div>
       <div class="rk-kv"><span>运行于</span><span>${esc((this.app.ext && this.app.ext.host) || '独立网页')}</span></div>
-      <div class="rk-field">素材许可</div>
-      <div class="rk-hint" style="margin-top:0">「大肥鱼」鲸鱼娘形象为社区二创，CC BY-NC-SA 4.0（非商用、署名、相同方式共享）。<br>
-        真模型鲸鱼娘来自 Pal-AI-Lab/Coopanion，AGPL-3.0；只在页面加载了 vendor/whale-rig.js 时使用。<br>
-        网友内容包的许可以包内 license 字段为准。</div>
+      <div class="rk-field">许可证与署名</div>
+      <div class="rk-hint" style="margin-top:0">${APPEARANCE_NOTICE}用户导入的内容包沿用各自的许可和署名。</div>
       <div class="rk-field">快捷键</div>
       <div class="rk-hint" style="margin-top:0">B 布置 · F 复位视角 · M 地图 · C 聊天 · 1–9 换房间 · Esc 关闭<br>剧情中：空格 / 回车 下一句，数字键选选项</div>`;
   }
@@ -575,7 +640,7 @@ export class Shell {
         : `<div class="rk-sub">${to ? '通往的房间已经不在家里了' : '这扇门还没通往别的房间'}</div><div class="rk-row"><button class="rk-btn" data-door-toggle="${esc(o.id)}">${o.state && o.state.open ? '关门' : '开门'}</button></div>`}
       ${rooms.length ? `<div class="rk-field">${room ? '改成通往' : '通往'}</div><div class="rk-chips">${rooms.map((r) => `<button data-door-link="${esc(o.id)}" data-room-id="${esc(r.id)}" class="${r.id === to ? 'on' : ''}">${esc(r.floor + ' ' + r.name)}</button>`).join('')}${to ? `<button data-door-link="${esc(o.id)}" data-room-id="">不通</button>` : ''}</div>` : '<div class="rk-hint">家里只有这一个房间——在 🗺 地图里添加房间后就能连起来。</div>'}
     </div>`;
-    app.hud.openDrawer({ title: def ? def.name : '门', sub: def ? def.sub : '', html });
+    app.hud.openDrawer({ title: def ? def.name : '门', sub: '', html, anchor: { id: o.id } });
   }
 
   /* ───────── 点击 ───────── */
@@ -618,7 +683,7 @@ export class Shell {
     if (t.hasAttribute('data-town-enter')) { const id = t.getAttribute('data-town-enter'); if (!(app.town.thread && app.town.thread.id === id)) this._townDo(async () => { await app.town.enter(id); this.open('town'); }); else this.open('town'); return; }
     if (t.hasAttribute('data-sim')) { const v = t.getAttribute('data-sim'); app.setWorkStatus(v ? { state: v, task: v === 'working' ? '模拟任务：整理房间' : null } : null); this._diagAt = 0; return; }
     if (t.hasAttribute('data-social')) { const it = ((app.ext && app.ext.social) || []).find((x) => x.id === t.getAttribute('data-social')); if (it) { it.toggle(); setTimeout(() => { if (this.page === 'social') this.render(); }, 50); } return; }
-    if (t.hasAttribute('data-door-go')) { const o = app.world.byId.get(t.getAttribute('data-door-go')); if (o) app.walkThrough(o); return; }
+    if (t.hasAttribute('data-door-go')) { const o = app.world.byId.get(t.getAttribute('data-door-go')); if (o) app.activate(o); return; }
     if (t.hasAttribute('data-door-toggle')) { const o = app.world.byId.get(t.getAttribute('data-door-toggle')); if (o) { app.world.apply({ t: 'state', id: o.id, patch: { open: !(o.state && o.state.open) } }); this.doorCard(o); } return; }
     if (t.hasAttribute('data-door-link')) {
       const o = app.world.byId.get(t.getAttribute('data-door-link')), rid = t.getAttribute('data-room-id');
@@ -637,15 +702,19 @@ export class Shell {
       return;
     }
     if (t.hasAttribute('data-map-new')) { this._newRoom(blankScene(t.getAttribute('data-map-new') === 'open')); return; }
-    switch (t.getAttribute('data-s')) {
+    const action = t.getAttribute('data-s');
+    if (action?.startsWith('world-')) { this._townDo(() => this.worldPanel.action(action.slice(6), t)); return; }
+    if (action?.startsWith('hub-')) { e.preventDefault(); this._townDo(() => this.hub.action(action.slice(4), t)); return; }
+    switch (action) {
       case 'rooms': this.openMenu('rooms', t); return;
       case 'more': this.openMenu('more', t); return;
       case 'time': { const i = TIME_CYCLE.indexOf(app.world.scene.env.period); app.command({ op: 'env.set', period: TIME_CYCLE[(i + 1) % TIME_CYCLE.length] }); break; }
       case 'weather': { const i = WEATHER_CYCLE.indexOf(app.world.scene.env.weather); app.command({ op: 'env.set', weather: WEATHER_CYCLE[(i + 1) % WEATHER_CYCLE.length] }); break; }
-      case 'conn': this.open('conn'); break;
+      case 'conn': this.open(this.hub ? 'social' : 'conn'); break;
       case 'close': this.close(); break;
       case 'chat-send': this._sendChat(); break;
       case 'town-connect': { const u = this.el.body.querySelector('.rk-town-url'); this._townDo(() => app.town.connect(u && u.value.trim())); return; }
+      case 'town-login-cancel': app.town.cancelLogin(); return;
       case 'town-new': { const i = this.el.body.querySelector('.rk-town-title'); this._townDo(async () => { await app.town.create(i && i.value.trim()); this.open('town'); }); return; }
       case 'town-leave': this._townDo(async () => { await app.town.leave(); this.open('social'); }); return;
       case 'town-say': this._townSay(); return;
@@ -664,6 +733,7 @@ export class Shell {
       }
       case 'town-logout': e.preventDefault(); this._townDo(() => app.town.logout()); return;
       case 'town-admin': this.page === 'town-admin' ? this._renderTownAdmin() : this.open('town-admin'); return;
+      case 'town-more': this._townDo(() => app.town.sortBy(app.town.sort, true)); return;
       case 'town-lock': { const info = app.town.threads.find((x) => app.town.thread && x.id === app.town.thread.id); this._townDo(() => app.town.lock(!(info && info.locked))); return; }
       case 'town-grant': { const v = (c) => (this.el.body.querySelector(c) || {}).value || ''; this._townAdmin({ action: 'grant', target: 'm:' + v('.rk-admin-who').trim(), role: v('.rk-admin-role'), scope: v('.rk-admin-scope').trim() }); return; }
       case 'town-unban': { const v = (this.el.body.querySelector('.rk-admin-who') || {}).value || ''; this._townAdmin({ action: 'unban', target: 'm:' + v.trim() }); return; }

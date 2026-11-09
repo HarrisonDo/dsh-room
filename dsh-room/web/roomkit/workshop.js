@@ -8,12 +8,14 @@ import { Iso } from './iso.js';
 import { normalizeDef, CATEGORY_NAMES } from './catalog.js';
 import { paintSprite } from './paint-furniture.js';
 import { paintWallItem, wallItemFrame } from './paint-room.js';
-import { paintWhale, WHALE_LOOKS } from './paint-whale.js';
+import { DEFAULT_ROLE } from './default-characters.js';
+import { paintWhale, WHALE_LOOKS } from './appearance.js';
 import { exportPack } from './packs.js';
 import { readCharacterFile } from './character.js';
+import { WORLD_BYTES } from '../../shared/world-format.js';
 
-export function download(filename, obj) {
-  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+export function download(filename, obj, compact = false) {
+  const blob = new Blob([JSON.stringify(obj, null, compact ? 0 : 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = filename.replace(/[\\/:*?"<>|]+/g, '_');
@@ -21,7 +23,7 @@ export function download(filename, obj) {
   setTimeout(() => URL.revokeObjectURL(a.href), 3000);
 }
 
-function pickFile(accept) {
+export function pickFile(accept) {
   return new Promise((res) => {
     const inp = document.createElement('input');
     inp.type = 'file'; inp.accept = accept; inp.style.display = 'none';
@@ -56,6 +58,9 @@ export function renderScenesPane(ed, el) {
     <div class="rk-chips" style="margin-top:6px">
       <button data-sc="new">＋ 空房间</button><button data-sc="open-air">＋ 露天广场</button><button data-sc="dup">复制当前</button><button data-sc="export">导出场景</button><button data-sc="import">导入场景</button>
     </div>
+    <div class="rk-field">世界草稿</div>
+    <div class="rk-chips"><button data-sc="world-save">保存世界草稿</button><button data-sc="world-export">导出世界包</button><button data-sc="world-open">预览最近草稿</button><button data-sc="world-import">预览世界包</button></div>
+    <div class="rk-line"><input data-world-author placeholder="缺失素材作者时填写" maxlength="40"><input data-world-license placeholder="缺失素材许可时填写" maxlength="40"></div>
     <div class="rk-field">我的场景</div>
     ${saved.length ? saved.map((s) => `<div class="rk-scene ${s.id === sc.id ? 'on' : ''}" data-sc-open="${esc(s.id)}"><span>${esc(s.name || s.id)}</span><small>${s.w || '?'}×${s.h || '?'}</small>${s.id === sc.id ? '' : `<button data-sc-del="${esc(s.id)}" title="删除">×</button>`}</div>`).join('') : '<div class="rk-hint">还没有存过的场景（改动会自动保存）</div>'}
     <div class="rk-field">从模板新建</div>
@@ -85,6 +90,26 @@ export async function onScenesClick(ed, e) {
     return true;
   }
   const a = b.getAttribute('data-sc');
+  if (a?.startsWith('world-')) {
+    try {
+      if (a === 'world-open') await app.worldDrafts.preview(await app.worldDrafts.latest());
+      else if (a === 'world-import') {
+        const file = await pickFile('.json,application/json');
+        if (file) {
+          if (file.size > WORLD_BYTES) throw new Error('世界包超过 4 MiB');
+          await app.worldDrafts.preview(JSON.parse(await file.text()));
+        }
+      } else {
+        const options = { author: elValue(b, '[data-world-author]'), license: elValue(b, '[data-world-license]') };
+        if (a === 'world-save') { await app.worldDrafts.save(options); app.hud.toast('世界草稿已保存'); }
+        else {
+          const release = await app.worldDrafts.capture(options);
+          download(release.title + '.world.json', release, true);
+        }
+      }
+    } catch (error) { app.hud.toast(error.message, 3000); }
+    return true;
+  }
   if (a === 'new' || a === 'open-air') {
     const open = a === 'open-air';
     app.openScene({
@@ -93,7 +118,7 @@ export async function onScenesClick(ed, e) {
         ? { w: 16, h: 12, mats: [{ kind: 'grass', color: '#9bd17a' }, { kind: 'stone', color: '#d9d2c3' }], walls: { left: false, right: false, height: 300 }, slab: 22 }
         : { w: 8, h: 6, walls: { left: true, right: true, height: 300 } },
       objects: open ? [] : [{ def: 'door', wall: 'right', at: 6.5, z: 0 }, { def: 'window', wall: 'left', at: 2.5, z: 100 }],
-      agents: [{ id: 'whale', name: '大肥鱼', brain: 'pet', character: 'dafeiyu', x: open ? 8 : 4, y: open ? 6 : 3, look: { body: '#5b8def', belly: '#eef5ff', hat: 'maid' } }],
+      agents: [{ ...DEFAULT_ROLE, x: open ? 8 : 4, y: open ? 6 : 3 }],
     });
     return true;
   }
@@ -107,6 +132,10 @@ export async function onScenesClick(ed, e) {
   if (a === 'export') { app.exportScene(); return true; }
   if (a === 'import') { ed.el.file.click(); return true; }
   return true;
+}
+
+function elValue(button, selector) {
+  return button.parentElement.parentElement.querySelector(selector)?.value.trim() || '';
 }
 
 export function onScenesChange(ed, e) {

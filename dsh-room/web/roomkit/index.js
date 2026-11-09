@@ -8,7 +8,7 @@ export { World, normalizeScene, ROOM_DEFAULTS } from './scene.js';
 export { Iso, orient } from './iso.js';
 export { Nav } from './nav.js';
 export { envAt, PERIODS, WEATHERS } from './env.js';
-export { WHALE_LOOKS } from './paint-whale.js';
+export { WHALE_LOOKS } from './appearance.js';
 export { PHRASES } from './brain.js';
 export { normalizeStory } from './story.js';
 export { normalizeCharacter, readCharacterFile, DEFAULT_CHARACTERS } from './character.js';

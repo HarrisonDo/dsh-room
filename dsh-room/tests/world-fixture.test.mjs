@@ -1,31 +1,21 @@
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { Catalog } from '../web/roomkit/catalog.js';
 import { Nav } from '../web/roomkit/nav.js';
 import { validatePack } from '../web/roomkit/packs.js';
 import { World } from '../web/roomkit/scene.js';
+import { digestJSON, verifyWorldRelease } from '../shared/world-format.js';
 
-function canonicalJSON(value) {
-  if (Array.isArray(value)) return '[' + value.map(canonicalJSON).join(',') + ']';
-  if (value !== null && typeof value === 'object') {
-    const fields = Object.keys(value).sort().map((key) => JSON.stringify(key) + ':' + canonicalJSON(value[key]));
-    return '{' + fields.join(',') + '}';
-  }
-  return JSON.stringify(value);
-}
-
-const digest = (data) => createHash('sha256').update(canonicalJSON(data), 'utf8').digest('hex');
-
-test('合作信标样例可加载，场景、完成事件和经历引用一致', () => {
+test('合作信标样例可加载，场景、完成事件和经历引用一致', async () => {
   const file = new URL('./fixtures/cooperative-beacons.json', import.meta.url);
   const { worldRelease, participants, completionEvent, experience } = JSON.parse(readFileSync(file, 'utf8'));
   const { hash, ...release } = worldRelease;
   assert.equal(release.format, 'roomkit.world');
   assert.equal(release.v, 1);
   assert.equal(release.protocol, 'roomkit.session/1');
-  assert.equal(hash, digest(release));
+  assert.equal(hash, await digestJSON(release));
+  assert.deepEqual(await verifyWorldRelease(worldRelease), worldRelease);
 
   const [embedded] = release.packs;
   assert.equal(embedded.v, 1);
@@ -33,7 +23,7 @@ test('合作信标样例可加载，场景、完成事件和经历引用一致',
   assert.ok(ok, errors.join('\n'));
   assert.deepEqual(warnings, []);
   assert.deepEqual(release.dependencies, [
-    { id: pack.id, version: pack.version, hash: digest(embedded), source: 'embedded' },
+    { id: pack.id, version: pack.version, hash: await digestJSON(embedded), source: 'embedded' },
   ]);
 
   const world = new World(new Catalog().addAll(pack.furniture), release.scene);

@@ -1,0 +1,62 @@
+{
+  "name": "dsh-room",
+  "version": "0.1.0-r03c.1",
+  "description": "DSH 房间插件，带 Canvas Q 版鲸鱼娘、小屋、小院和宿主模型互动。",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/HarrisonDo/dsh-room.git"
+  },
+  "homepage": "https://mu2a.penguingugu.com/assets/dsh-install.html",
+  "bugs": {
+    "url": "https://github.com/HarrisonDo/dsh-room/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "desktop-pet",
+    "room",
+    "isometric",
+    "web-ui"
+  ],
+  "icon": "./install/assets/icon.svg",
+  "main": "./install/lib/index.js",
+  "exports": {
+    ".": "./install/lib/index.js",
+    "./client": "./install/lib/client.js",
+    "./locale/*": "./install/locales/*",
+    "./cordis.patch.yml": "./install/cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "install",
+    "release.json",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "test:install": "node --test scripts/tests/github-install.test.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./install/cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-connection"
+      ],
+      "platform": "web"
+    },
+    "compatibility": {
+      "dshReleases": {
+        "0.2.2-rc.1": "unknown"
+      }
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.4",
+    "react": "^18.2.0"
+  }
+}

@@ -4,6 +4,7 @@
  * 模型选择与 dsh-pet 一致：跟随 agentDefaultModel 当前选择；模型声明支持时才关深度思考。
  */
 import { randomUUID } from 'node:crypto';
+import { worldAgentPrompt } from '../shared/agent-request.js';
 
 /** 调用身份：适配器据此生成服务商需要的载体，值只需稳定 */
 const CALL_IDENTITY = 'dsh-room';
@@ -102,12 +103,13 @@ function failureText(finish) {
 }
 
 /** 只收正文：reasoning / tool 块都不要；适配器的错误折进 finish，不在流里抛 */
-async function collectText(stream) {
+async function collectText(stream, limit = Infinity) {
   let text = '', finish = null;
   for await (const chunk of stream) {
     if (chunk.type === 'text-delta') text += chunk.text;
     else if (chunk.type === 'block-end' && chunk.block && chunk.block.type === 'text' && !text) text = chunk.block.text || '';
     else if (chunk.type === 'finish') finish = chunk.reason;
+    if (text.length > limit) return { text: text.slice(0, limit).trim(), finish };
   }
   return { text: text.trim(), finish };
 }
@@ -122,8 +124,11 @@ export function createChat(ctx) {
       return { available: !!(llm && typeof llm.stream === 'function' && sel), model: sel ? sel.provider + '/' + sel.model : null };
     },
     async say(payload, signal) {
-      const q = cleanRequest(payload);
-      if (!q) return { ok: false, error: '没有内容' };
+      const q = payload?.worldAgent ? null : cleanRequest(payload);
+      let prompt;
+      try { if (payload?.worldAgent) prompt = worldAgentPrompt(payload.worldAgent); }
+      catch { return { ok: false, error: '世界模型请求格式不合法' }; }
+      if (!q && !prompt) return { ok: false, error: '没有内容' };
       const llm = service(ctx, 'llm'), sel = currentModel(ctx);
       if (!llm || typeof llm.stream !== 'function') return { ok: false, error: 'DSH 的模型服务不可用' };
       if (!sel) return { ok: false, error: '当前对话还没有选模型' };
@@ -137,12 +142,12 @@ export function createChat(ctx) {
         const deadline = AbortSignal.timeout(TIMEOUT_MS);
         const off = await supportsReasoningOff(llm, sel);
         const { text, finish } = await collectText(llm.stream({
-          provider: sel.provider, model: sel.model, sessionId: CALL_IDENTITY, system: systemPrompt(q),
-          messages: [...q.history.map((m) => (m.role === 'user' ? userMessage(m.text) : assistantMessage(m.text, sel))), userMessage(q.text)],
-          temperature: 1,
+          provider: sel.provider, model: sel.model, sessionId: CALL_IDENTITY, system: prompt ? prompt.system : systemPrompt(q),
+          messages: prompt ? [userMessage(prompt.user)] : [...q.history.map((m) => (m.role === 'user' ? userMessage(m.text) : assistantMessage(m.text, sel))), userMessage(q.text)],
+          temperature: prompt ? 0.4 : 1,
           ...(off ? { reasoningEffort: 'off' } : {}),
           signal: signal ? AbortSignal.any([signal, deadline]) : deadline,
-        }));
+        }), prompt ? 4000 : Infinity);
         return text ? { ok: true, text, model: sel.provider + '/' + sel.model } : { ok: false, error: failureText(finish) };
       } catch (e) {
         return { ok: false, error: friendlyError((e && e.message) || String(e)) };

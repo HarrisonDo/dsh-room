@@ -9,8 +9,9 @@
  *
  * 页面文件直接从 ../dsh-room/web 读（自定义协议，不开任何网络端口）。ROOMKIT_WEB 可以指向别的构建目录。
  */
-import { app, BrowserWindow, ipcMain, Menu, net, protocol, screen, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, screen, session, shell } from 'electron';
 import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -20,6 +21,13 @@ const ORIGIN = 'app://roomkit';
 const IS_MAC = process.platform === 'darwin';
 const SIZES = [{ label: '小', w: 320 }, { label: '中', w: 460 }, { label: '大', w: 680 }];
 const MIN_W = 220;
+const WEB_TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
+  '.png': 'image/png', '.webp': 'image/webp', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml' };
+const managed = process.env.ROOMKIT_MANAGED === '1' && process.connected && typeof process.send === 'function';
+if (managed) {
+  app.setPath('userData', process.env.ROOMKIT_USER_DATA);
+}
+let windowAnnounced = false;
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 app.setName('大肥鱼的房间');
@@ -33,25 +41,48 @@ function loadPrefs() {
   try { prefs = Object.assign(prefs, JSON.parse(readFileSync(PREFS_FILE(), 'utf8'))); } catch { /* 第一次打开 */ }
 }
 let saveT = null;
+function flushPrefs() {
+  clearTimeout(saveT);
+  if (saveT === null) return;
+  saveT = null;
+  try { writeFileSync(PREFS_FILE(), JSON.stringify(prefs, null, 2)); } catch (e) { console.warn('保存窗口位置失败', e); }
+}
 function savePrefs() {
   clearTimeout(saveT);
-  saveT = setTimeout(() => { try { writeFileSync(PREFS_FILE(), JSON.stringify(prefs, null, 2)); } catch (e) { console.warn('保存窗口位置失败', e); } }, 400);
+  saveT = setTimeout(flushPrefs, 400);
 }
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const maxWidth = () => Math.round(screen.getPrimaryDisplay().workArea.width * 0.9);
-const heightFor = (w) => Math.round(w * clamp(prefs.ratio, 0.4, 1.6));
+const roomRatio = () => clamp(Number(prefs.ratio) || 0.8, 0.4, 1.6);
+function fittedSize(width, area) {
+  const ratio = roomRatio();
+  const max = Math.max(1, Math.floor(Math.min(area.width * 0.9, area.height / ratio)));
+  width = clamp(Math.round(width), Math.min(MIN_W, max), max);
+  return { width, height: Math.round(width * ratio) };
+}
+
+function fitBounds(x, y, size, area) {
+  return {
+    x: clamp(Math.round(x), area.x, area.x + area.width - size.width),
+    y: clamp(Math.round(y), area.y, area.y + area.height - size.height),
+    ...size,
+  };
+}
 
 /** 记住的位置还在某块屏幕上就用，否则放到主屏右下角 */
 function initialBounds() {
-  const width = clamp(Math.round(prefs.width) || 460, MIN_W, maxWidth()), height = heightFor(width);
+  const width = Number.isFinite(prefs.width) && prefs.width > 0 ? prefs.width : 460;
+  const saved = { x: prefs.x, y: prefs.y, width, height: Math.round(width * roomRatio()) };
   if (Number.isFinite(prefs.x) && Number.isFinite(prefs.y)) {
-    const onScreen = screen.getAllDisplays().some(({ workArea: a }) =>
-      prefs.x + width > a.x + 40 && prefs.x < a.x + a.width - 40 && prefs.y + height > a.y + 40 && prefs.y < a.y + a.height - 40);
-    if (onScreen) return { x: Math.round(prefs.x), y: Math.round(prefs.y), width, height };
+    const area = screen.getDisplayMatching(saved).workArea;
+    if (saved.x + saved.width > area.x + 40 && saved.x < area.x + area.width - 40
+      && saved.y + saved.height > area.y + 40 && saved.y < area.y + area.height - 40) {
+      return fitBounds(saved.x, saved.y, fittedSize(width, area), area);
+    }
   }
   const a = screen.getPrimaryDisplay().workArea;
-  return { x: a.x + a.width - width - 24, y: a.y + a.height - height - 24, width, height };
+  const size = fittedSize(width, a);
+  return fitBounds(a.x + a.width - size.width - 24, a.y + a.height - size.height - 24, size, a);
 }
 
 /* ───────── 页面文件（app://roomkit/…） ───────── */
@@ -67,6 +98,14 @@ function serveWeb() {
     let real;
     try { real = realpathSync(file); } catch { return new Response('Not found', { status: 404 }); }
     if (!real.startsWith(WEB + path.sep)) return new Response('Forbidden', { status: 403 });
+    if (managed) {
+      try {
+        return new Response(await readFile(real), { headers: {
+          'content-type': WEB_TYPES[path.extname(real)] || 'application/octet-stream',
+          'content-security-policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; object-src 'none'; frame-src 'none'; base-uri 'none'",
+        } });
+      } catch { return new Response('Not found', { status: 404 }); }
+    }
     return net.fetch(pathToFileURL(real).toString());
   });
 }
@@ -74,15 +113,133 @@ function serveWeb() {
 /** 两个窗口共用：只许待在 app://roomkit，外部 https 链接交给系统浏览器 */
 function lockDown(win) {
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https:\/\//i.test(url)) shell.openExternal(url);
+    if (!managed && /^https:\/\//i.test(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
-  win.webContents.on('will-navigate', (e, url) => { if (!url.startsWith(ORIGIN + '/')) e.preventDefault(); });
+  win.webContents.on('will-navigate', (e, url) => { if (managed || !url.startsWith(ORIGIN + '/')) e.preventDefault(); });
 }
 
 /* ───────── 桌面窗口 ───────── */
 
 let desk = null, full = null, dragFrom = null, quitting = false;
+const windowPage = deskMode => ORIGIN + (managed ? '/managed.html' : '/index.html') + (deskMode ? '?desk=1' : '');
+const secureWebPreferences = { contextIsolation: true, sandbox: true, nodeIntegration: false };
+const desktopPreload = { preload: path.join(HERE, 'preload.cjs'), ...(managed ? { additionalArguments: ['--roomkit-managed'] } : {}) };
+
+const parentCalls = new Map();
+const windowTimers = new Map();
+let requestId = 0, prepare = null, transition = null;
+const HOME_BYTES = 64 * 1024 * 1024 + 65536;
+const HOME_METHODS = new Set(['claim', 'save', 'model', 'chat', 'cancel-model', 'return', 'rotate']);
+
+function quitNow() {
+  quitting = true;
+  app.quit();
+}
+function parentCall(method, payload) {
+  if (!process.connected) return Promise.reject(new Error('DSH 已断开'));
+  const id = ++requestId;
+  const call = Promise.withResolvers();
+  const timer = setTimeout(() => {
+    parentCalls.delete(id);
+    call.reject(new Error('等待 DSH 超时'));
+  }, method === 'chat' ? 55000 : 14000);
+  parentCalls.set(id, call);
+  process.send({ type: 'roomkit.desktop.request', id, method, payload }, error => {
+    if (error) call.reject(new Error('DSH 已断开'));
+  });
+  return call.promise.finally(() => { clearTimeout(timer); parentCalls.delete(id); });
+}
+
+function managedSender(event) {
+  const window = full || desk;
+  if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) return false;
+  const url = new URL(event.senderFrame.url);
+  return url.protocol === 'app:' && url.host === 'roomkit' && url.pathname === '/managed.html';
+}
+
+function switchManaged(destination) {
+  if (transition) return transition;
+  const window = full || desk;
+  if (!window || quitting) return Promise.reject(new Error('桌面房间暂不可用'));
+  const ack = Promise.withResolvers();
+  const id = ++requestId;
+  const action = destination === 'return' ? 'return' : 'rotate';
+  prepare = { id, ack, action };
+  const timer = setTimeout(() => ack.reject(new Error('桌面房间未完成保存，请重试')), 47000);
+  window.webContents.send('roomkit:home-prepare', id, action);
+  transition = ack.promise.then(() => {
+    if (destination === 'return') quitNow();
+    else {
+      window.destroy();
+      if (destination === 'full') openFull();
+      else createDesk();
+    }
+  }).finally(() => { clearTimeout(timer); prepare = null; transition = null; });
+  return transition;
+}
+
+function managedAction(destination) {
+  void switchManaged(destination).catch(error => {
+    if (error.code === 'lost') quitNow();
+    else if (!quitting) void dialog.showMessageBox({ message: '房间仍在桌面', detail: error.message, buttons: ['知道了'] });
+  });
+}
+
+function watchManaged(win, returnTo) {
+  if (!managed) return;
+  const timer = setTimeout(quitNow, 15000);
+  windowTimers.set(win, timer);
+  win.once('closed', () => { clearTimeout(timer); windowTimers.delete(win); });
+  win.on('close', event => {
+    if (!quitting) { event.preventDefault(); managedAction(returnTo); }
+  });
+  win.webContents.on('render-process-gone', quitNow);
+  win.webContents.on('did-fail-load', (_, __, ___, ____, mainFrame) => { if (mainFrame) quitNow(); });
+}
+
+if (managed) {
+  process.on('message', message => {
+    if (message?.type === 'roomkit.desktop.quit') { if (full || desk) managedAction('return'); else quitNow(); return; }
+    if (message?.type !== 'roomkit.desktop.response') return;
+    const call = parentCalls.get(message.id);
+    if (message.ok) call?.resolve(message.result);
+    else call?.reject(Object.assign(new Error(message.error || 'DSH 请求失败'), { code: message.code }));
+  });
+  process.on('disconnect', quitNow);
+  ipcMain.handle('roomkit:home', async (event, method, payload) => {
+    try {
+      if (!managedSender(event) || !HOME_METHODS.has(method) || !payload
+        || Buffer.byteLength(JSON.stringify(payload)) > HOME_BYTES) throw new Error('桌面请求不合法或存档过大');
+      if ((method === 'return' || method === 'rotate') && prepare?.action !== method) throw new Error('桌面切换未开始');
+      return { ok: true, data: await parentCall(method, payload) };
+    } catch (error) { return { ok: false, error: error.message, code: error.code }; }
+  });
+  ipcMain.on('roomkit:home-ready', event => {
+    if (!managedSender(event)) return;
+    const window = full || desk;
+    clearTimeout(windowTimers.get(window));
+    windowTimers.delete(window);
+    window.show();
+    if (!windowAnnounced && process.connected) {
+      windowAnnounced = true;
+      process.send({ type: 'roomkit.desktop.ready', protocol: 2 }, () => {});
+    }
+  });
+  ipcMain.on('roomkit:home-prepared', (event, id, result) => {
+    if (!managedSender(event) || prepare?.id !== id) return;
+    if (result?.ok) prepare.ack.resolve();
+    else prepare.ack.reject(Object.assign(new Error(String(result?.error || '保存未完成').slice(0, 300)), { code: result?.code }));
+  });
+  ipcMain.handle('roomkit:home-return', async (event) => {
+    if (!managedSender(event)) return { ok: false, error: '无权切换房间窗口' };
+    try { await switchManaged('return'); return { ok: true }; }
+    catch (error) {
+      if (error.code === 'lost') quitNow();
+      return { ok: false, error: error.message };
+    }
+  });
+}
 
 function createDesk() {
   desk = new BrowserWindow({
@@ -91,16 +248,19 @@ function createDesk() {
     transparent: true, frame: false, hasShadow: false, backgroundColor: '#00000000',
     resizable: false, maximizable: false, fullscreenable: false,
     alwaysOnTop: !!prefs.top, show: false,
-    webPreferences: { preload: path.join(HERE, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false },
+    webPreferences: { ...secureWebPreferences, ...desktopPreload },
   });
   if (prefs.top) desk.setAlwaysOnTop(true, 'floating');
   if (IS_MAC && prefs.allSpaces) desk.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   desk.setIgnoreMouseEvents(true, { forward: true });
   lockDown(desk);
-  desk.loadURL(ORIGIN + '/index.html?desk=1');
-  desk.once('ready-to-show', () => desk && desk.show());
+  watchManaged(desk, 'return');
+  desk.loadURL(windowPage(true)).catch(() => { if (managed) quitNow(); });
+  desk.once('ready-to-show', () => {
+    if (!managed) desk?.show();
+  });
   desk.on('moved', rememberBounds);
-  desk.on('closed', () => { desk = null; dragFrom = null; if (!full && !quitting) app.quit(); });
+  desk.on('closed', () => { desk = null; dragFrom = null; if (!managed && !full && !quitting) app.quit(); });
 }
 
 function rememberBounds() {
@@ -113,9 +273,21 @@ function rememberBounds() {
 /** 改宽度，高度按房间比例；以底边中点为锚（站在任务栏/Dock 上的房间不会往下掉出屏幕） */
 function resizeDesk(width) {
   if (!desk) return;
-  const b = desk.getBounds(), w = clamp(Math.round(width), MIN_W, maxWidth()), h = heightFor(w);
-  desk.setBounds({ x: Math.round(b.x + (b.width - w) / 2), y: b.y + b.height - h, width: w, height: h });
+  const b = desk.getBounds(), area = screen.getDisplayMatching(b).workArea;
+  const size = fittedSize(width, area);
+  desk.setBounds(fitBounds(b.x + (b.width - size.width) / 2, b.y + b.height - size.height, size, area));
   rememberBounds();
+}
+
+function restoreVisibleDesk() {
+  if (!desk || quitting || dragFrom) return;
+  rememberBounds();
+  const next = initialBounds();
+  const current = desk.getBounds();
+  if (['x', 'y', 'width', 'height'].some(key => current[key] !== next[key])) {
+    desk.setBounds(next);
+    rememberBounds();
+  }
 }
 
 function setTop(on) {
@@ -132,17 +304,19 @@ function openFull() {
   if (full) { full.show(); full.focus(); return; }
   full = new BrowserWindow({
     width: 1100, height: 760, minWidth: 480, minHeight: 360, title: '大肥鱼的房间', backgroundColor: '#0f1524',
-    webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false },
+    show: !managed, webPreferences: { ...secureWebPreferences, ...(managed ? desktopPreload : {}) },
   });
   lockDown(full);
-  full.loadURL(ORIGIN + '/index.html');
-  full.on('closed', () => { full = null; if (!quitting) createDesk(); });
-  if (desk) desk.close();
+  watchManaged(full, 'desk');
+  full.loadURL(windowPage(false)).catch(() => { if (managed) quitNow(); });
+  full.on('closed', () => { full = null; if (!managed && !quitting) createDesk(); });
+  if (!managed && desk) desk.close();
 }
 
 /* ───────── 页面发来的请求（只认桌面窗口自己的） ───────── */
 
-const fromDesk = (e) => desk && e.sender === desk.webContents;
+const fromDesk = (e) => desk && e.sender === desk.webContents && e.senderFrame === desk.webContents.mainFrame
+  && e.senderFrame?.url === windowPage(true);
 
 ipcMain.on('desk:solid', (e, solid) => {
   if (!fromDesk(e)) return;
@@ -159,7 +333,7 @@ ipcMain.on('desk:drag', (e, phase) => {
     desk.setPosition(Math.round(dragFrom.x + c.x - dragFrom.cx), Math.round(dragFrom.y + c.y - dragFrom.cy));
   } else if (phase === 'end') {
     dragFrom = null;
-    rememberBounds();
+    restoreVisibleDesk();
   }
 });
 
@@ -174,7 +348,7 @@ ipcMain.on('desk:aspect', (e, ratio) => {
   resizeDesk(desk.getBounds().width);
 });
 
-ipcMain.on('desk:full', (e) => { if (fromDesk(e)) openFull(); });
+ipcMain.on('desk:full', (e) => { if (fromDesk(e)) { if (managed) managedAction('full'); else openFull(); } });
 
 /** 右键菜单：房间/时间/天气由页面执行（返回动作字符串），大小/置顶/完整房间/退出在这里处理 */
 ipcMain.handle('desk:menu', (e, spec) => {
@@ -196,8 +370,8 @@ ipcMain.handle('desk:menu', (e, spec) => {
       { label: '总在最前', type: 'checkbox', checked: !!prefs.top, click: (it) => setTop(it.checked) },
       IS_MAC ? { label: '在所有桌面显示', type: 'checkbox', checked: !!prefs.allSpaces, click: (it) => setAllSpaces(it.checked) } : null,
       { type: 'separator' },
-      { label: '打开完整房间…', click: () => openFull() },
-      { label: '退出', click: () => app.quit() },
+      { label: '打开完整房间…', click: () => managed ? managedAction('full') : openFull() },
+      managed ? { label: '回到 DSH', click: () => managedAction('return') } : { label: '退出', click: () => app.quit() },
     ].filter(Boolean);
     // 有的平台先通知"菜单关了"再执行点击：稍等一下再按"什么都没选"收尾
     Menu.buildFromTemplate(tpl).popup({ window: desk, callback: () => setTimeout(() => finish(null), 80) });
@@ -210,7 +384,10 @@ app.on('second-instance', () => {
   const w = full || desk;
   if (w) { w.show(); w.focus(); }
 });
-app.on('before-quit', () => { quitting = true; });
+app.on('before-quit', event => {
+  if (managed && !quitting && (desk || full)) { event.preventDefault(); managedAction('return'); }
+  else { quitting = true; flushPrefs(); }
+});
 // 不跟 window-all-closed 走：完整房间关掉的那一刻窗口数会短暂归零，随后桌面窗口会重新打开；退出看桌面窗口的 closed
 app.on('window-all-closed', () => {});
 
@@ -218,6 +395,12 @@ app.whenReady().then(() => {
   loadPrefs();
   // 房间不需要摄像头、麦克风、定位、通知等任何权限
   session.defaultSession.setPermissionRequestHandler((wc, perm, cb) => cb(false));
+  session.defaultSession.setPermissionCheckHandler(() => false);
+  if (managed) session.defaultSession.webRequest.onBeforeRequest((details, respond) => {
+    respond({ cancel: !/^(?:app:\/\/roomkit\/|data:|blob:app:\/\/roomkit\/)/.test(details.url) });
+  });
   serveWeb();
+  screen.on('display-removed', restoreVisibleDesk);
+  screen.on('display-metrics-changed', restoreVisibleDesk);
   createDesk();
 });

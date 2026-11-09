@@ -4,7 +4,7 @@ import { createTown } from '../scripts/town.mjs';
 import { openStore } from '../scripts/town-store.mjs';
 import { authConfig } from '../scripts/town-auth.mjs';
 
-const scene = { format: 'roomkit.scene', id: 'home', agents: [] };
+const scene = { format: 'roomkit.scene', v: 2, id: 'home', room: { w: 8, h: 6 }, objects: [], agents: [] };
 const nonce = () => 'n'.repeat(20) + Math.random().toString(36).slice(2, 14).padEnd(12, 'x');
 const env = { GITHUB_CLIENT_ID: 'gid', GITHUB_CLIENT_SECRET: 'gsec', LINUXDO_CLIENT_ID: 'lid', LINUXDO_CLIENT_SECRET: 'lsec', LINUXDO_MIN_TRUST: '1', TOWN_OWNER: 'github:boss', TOWN_PUBLIC_URL: 'https://town.example.com' };
 
@@ -80,9 +80,9 @@ test('characters belong to an account (max 3); others cannot speak as them; logo
   const { town } = await setup({ a: { id: 1, login: 'alice' }, b: { id: 2, login: 'bob' } });
   const A = (await signIn(town, 'github', 'a')).token, B = (await signIn(town, 'github', 'b')).token;
   const c = (await town.api.character({ name: '大肥鱼' }, { token: A })).character;
-  await town.api.character({ name: '泡泡' }, { token: A });
-  await town.api.character({ name: '团子' }, { token: A });
-  await assert.rejects(town.api.character({ name: '第四只' }, { token: A }), /最多 3/);
+  const results = await Promise.allSettled(['泡泡', '团子', '第四只'].map((name) => town.api.character({ name }, { token: A })));
+  assert.equal(results.filter(({ status }) => status === 'fulfilled').length, 2);
+  assert.match(results.find(({ status }) => status === 'rejected').reason.message, /最多 3/);
   await town.api.character({ me: c.id, name: '大肥鱼改' }, { token: A });
   assert.equal(town.api.me({}, { token: A }).characters.find((x) => x.id === c.id).name, '大肥鱼改');
   await assert.rejects(town.api.character({ me: c.id, name: '抢' }, { token: B }), /不是你的/);

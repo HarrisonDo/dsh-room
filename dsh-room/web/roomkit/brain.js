@@ -236,6 +236,7 @@ export class Director {
    *       { par:[step...] } 并行。剧情（story.js）复用同一套步骤。
    */
   async run(play, ctx = {}) {
+    if (this.app.worldSession?.id) return false;
     const cast = new Set();
     this.app.bus.emit('play:start', { id: play.id, name: play.name });
     try {

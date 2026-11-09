@@ -7,12 +7,17 @@ services:
       dockerfile: deploy/town/Dockerfile
     image: dsh-town:latest
     restart: unless-stopped
+    mem_limit: 512m
+    pids_limit: 128
     env_file: .env
     environment:
       TOWN_HOST: 0.0.0.0
       TOWN_PORT: 18780
       TOWN_DB: /data/town.db
       TOWN_WORDS: /config/words.txt
+      TOWN_WORLD_ACTIVE_LIMIT: ${TOWN_WORLD_ACTIVE_LIMIT:-4}
+      TOWN_WORLD_STREAM_LIMIT: ${TOWN_WORLD_STREAM_LIMIT:-16}
+      NODE_OPTIONS: --max-old-space-size=320
     volumes:
       - ./data:/data                      # 数据库：迁移时整个目录拷走
       - ./backup:/backup                  # 每日备份

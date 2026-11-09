@@ -154,7 +154,7 @@ export class Home {
     return (p && (p.scenes || []).find((s) => s.id === sid)) || null;
   }
   /**
-   * 老存档补齐：存档里的角色没写 follow 时，照模板里同一个角色的写法补上（泡泡这种"跟着大肥鱼走"的设定是后来加的）。
+   * 老存档补齐：存档里的角色没写 follow 时，照模板里同一个角色的写法补上（模板中跟随主角的设定是后来加的）。
    * 原地修改并返回 scene。
    */
   prepare(scene) {

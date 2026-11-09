@@ -9,7 +9,8 @@
  * 外壳（web/roomkit/shell.js）不认识 DSH：这里把上面这些能力包成 opts.ext 传进去。
  * 对外：ctx.provide('roomApi7341', { command, on, app })，同页其他插件可以直接驱动房间。
  */
-import { mount, WHALE_LOOKS } from '../web/roomkit/index.js';
+import { localStore, mount, PackStore, WHALE_LOOKS } from '../web/roomkit/index.js';
+import { homeView, legacyBrowserHome } from './home-view.js';
 import '../web/packs/default/pack.js';
 import './sprites.gen.js';
 
@@ -28,19 +29,33 @@ const LEVELS = { thinking: 1, working: 1, result: 1, waiting: 1, success: 1, err
 
 let current = null;                       // 当前挂着的房间实例（标签页和挂件互斥，同一时刻只有一个）
 const listeners = new Set();
+const viewId = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
+let closeBarrier = Promise.resolve();
 
 /** 调宿主接口：非 2xx 抛错（401/403 = 这个页面没有 DSH 凭据，比如在独立浏览器里打开的 Web 预览） */
 async function hostCall(endpoint, payload, signal) {
   const r = await fetch(API_BASE + endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload || {}), signal, cache: 'no-store' });
-  if (r.status === 404) throw new Error('宿主没有这个接口（重启 DSH 后生效）');
+  if (r.status === 404) throw Object.assign(new Error('宿主没有这个接口（重启 DSH 后生效）'), { status: 404 });
   if (r.status === 401 || r.status === 403) throw new Error('这个页面没有 DSH 凭据');
   if (!r.ok) throw new Error('宿主出错 HTTP ' + r.status);
   return r.json();
 }
 
+async function homeCall(action, input = {}, keepalive = false) {
+  const payload = JSON.stringify({ ...input, action, view: viewId });
+  const response = await fetch(API_BASE + 'home', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: payload,
+    cache: 'no-store', keepalive, signal: AbortSignal.timeout(15000),
+  });
+  if (response.status === 404) throw Object.assign(new Error('当前宿主没有桌面接续能力'), { code: 'unavailable' });
+  const result = await response.json();
+  if (!response.ok || !result.ok) throw Object.assign(new Error(result.error || '房间存档请求失败'), { code: result.code });
+  return result;
+}
+
 /** 连接与工作状态：页面每秒来取一次，顺便把房间现状带给宿主（Agent 的 room_look 用）、领走待执行的命令 */
-function createLink() {
-  const rpc = hostCall;
+function createLink(home) {
+  const rpc = (endpoint, payload, signal) => hostCall(endpoint, home ? { ...payload, home: home.identity } : payload, signal);
   const link = { rpc, online: false, error: '', status: null, at: 0 };
   link.poll = async (app) => {
     try {
@@ -90,9 +105,12 @@ function followStatus(ctx, app, link) {
   };
   let busy = false;
   const tick = async () => {
-    if (busy) return;
+    if (busy || app.homePaused || app._dead) return;
     busy = true;
-    try { const s = await link.poll(app); if (s) fromHost(s); else fromPet(); } finally { busy = false; }
+    try {
+      const s = await link.poll(app);
+      if (!app.homePaused && !app._dead) { if (s) fromHost(s); else fromPet(); }
+    } finally { busy = false; }
   };
   const t = setInterval(tick, 1000);
   tick();
@@ -152,9 +170,21 @@ function makeExt(ctx, link, onFullscreen) {
       ];
     },
     chatStatus() { const c = link.status && link.status.chat; return c && c.available ? '模型：' + c.model : '模型不可用时会用离线台词回你'; },
-    async chat(req) {
-      const r = await link.rpc('chat', req, AbortSignal.timeout(50000));
+    async chat(req, signal) {
+      const deadline = AbortSignal.timeout(50000);
+      const r = await link.rpc('chat', req, signal ? AbortSignal.any([signal, deadline]) : deadline);
       return r && r.ok ? { text: r.text } : { error: (r && r.error) || '模型没有回话' };
+    },
+    worldAgent: {
+      describeCapabilities() {
+        const status = link.status?.chat;
+        return { available: Boolean(status?.available), name: status?.model || '手动模式' };
+      },
+      async generate(request, signal) {
+        const result = await link.rpc('chat', { worldAgent: request }, signal);
+        if (!result?.ok) throw new Error(result?.error || 'DSH 模型没有回话');
+        return result.text;
+      },
     },
     social: [],
   };
@@ -219,7 +249,7 @@ function pushStore() {
   return () => { clearInterval(t); sync(); };
 }
 
-function mountRoom(ctx, el, opts) {
+function mountRoom(ctx, el, opts, home) {
   const packs = (window.RoomKitPacks || []).map(pack => ({ ...pack,
     furniture: (pack.furniture || []).map(def => {
       const src = def.art && def.art.src;
@@ -227,16 +257,20 @@ function mountRoom(ctx, el, opts) {
       return embedded ? { ...def, art: { ...def.art, src: embedded } } : def;
     }),
   }));
-  const link = createLink();
+  const link = createLink(home);
   const ext = makeExt(ctx, link, opts.onFullscreen);
-  const app = mount(el, Object.assign({ storageKey: 'dsh-room', assetBase: ASSET_BASE, packs, ext }, opts));
+  const app = mount(el, Object.assign({ storageKey: 'dsh-room', assetBase: ASSET_BASE, packs, ext }, opts, home?.options));
   app.groupOn = false;
-  try { app.groupOn = localStorage.getItem('dsh-room.group') === '1'; } catch (e) { /* 忽略 */ }
+  try { app.groupOn = home ? home.group() : localStorage.getItem('dsh-room.group') === '1'; } catch (e) { /* 忽略 */ }
   // 社区页的开关：DSH 才有的能力，不放进通用引擎
   ext.social.push({
     id: 'sessions', label: '会话同伴', sub: '每个 DSH 会话在房间里有一只小鲸鱼，跟着自己的会话忙',
     on: () => app.groupOn,
-    toggle() { app.groupOn = !app.groupOn; try { localStorage.setItem('dsh-room.group', app.groupOn ? '1' : '0'); } catch (e) { /* 忽略 */ } },
+    toggle() {
+      app.groupOn = !app.groupOn;
+      if (home) home.setGroup(app.groupOn);
+      else try { localStorage.setItem('dsh-room.group', app.groupOn ? '1' : '0'); } catch (e) { /* 忽略 */ }
+    },
   }, {
     id: 'tools', label: '允许 Agent 操作房间', sub: '给每个对话增加 room_look / room_say / room_do 三个工具（会多占一点上下文）',
     on: () => !!(link.status && link.status.tools && link.status.tools.enabled),
@@ -252,11 +286,11 @@ function mountRoom(ctx, el, opts) {
     const ws = ctx.get && ctx.get('uiWorkspace');
     if (ws && typeof ws.openSession === 'function') app.hud.addCardAction('打开这个会话', () => ws.openSession(sid));
   });
-  const stops = [followStatus(ctx, app, link), followSessions(ctx, app), pushStore(), offCard];
+  const stops = [followStatus(ctx, app, link), followSessions(ctx, app), home ? home.attach(app) : pushStore(), offCard];
   const off = app.on('*', (data, ev) => listeners.forEach((fn) => { try { fn(ev, data); } catch (e) { /* 忽略 */ } }));
   current = app;
   return () => {
-    if (app.opts.autosave) app.storage.save(app.world.toJSON());
+    if (!home) app.checkpointHome();
     stops.forEach((s) => s());
     off();
     if (current === app) current = null;
@@ -287,21 +321,121 @@ function makeFactory() {
       const buttonStyle = { border: '1px solid #9fb2d944', borderRadius: 10, background: '#eaf0ff', color: '#243047', cursor: 'pointer', padding: '7px 11px', font: '13px system-ui' };
       const action = (text, fn, key = text) => h('button', { type: 'button', style: buttonStyle, onClick: fn, children: text }, key);
       function RoomPanel() {
-        const ref = useRef(null);
-        const [error, setError] = useState('');
+        const ref = useRef(null), handlers = useRef(null);
+        const [state, setState] = useState({});
+        const [notice, setNotice] = useState('');
+        const [working, setWorking] = useState(false);
         useEffect(() => {
-          let stop = null, dead = false;
-          Promise.all([loadRig(), pullStore()]).then(() => {
-            if (!dead) stop = mountRoom(ctx, ref.current, { onFullscreen: placement === 'full' ? undefined : () => setPlacement('full') });
-          }).catch(e => { console.error('[dsh-room] 房间启动失败', e); if (!dead) setError(e.message || '启动失败'); });
-          return () => { dead = true; if (stop) stop(); };
+          let stop, home, dead = false, busy = false, changing = false, recovering = false, legacy = false;
+          const loadingRig = loadRig();
+          const options = { onFullscreen: placement === 'full' ? undefined : () => setPlacement('full') };
+          const report = error => { if (!dead) setNotice(error?.message || '房间暂时未能打开'); };
+          const unmount = () => { stop?.(); stop = null; home = null; };
+          const poll = async () => {
+            if (dead || busy || changing || legacy) return;
+            busy = true;
+            try {
+              await closeBarrier;
+              if (dead) return;
+              let info = await homeCall(home ? 'status' : 'claim', home?.identity);
+              if (info.initialize) {
+                const legacySnapshot = await legacyBrowserHome(PackStore).catch(error => {
+                  if (error.code === 'too_large') throw error;
+                  throw Object.assign(new Error('无法读取旧版 IndexedDB，先保留原房间'), { code: 'unavailable' });
+                });
+                if (dead) return;
+                info = await homeCall('claim', { legacy: legacySnapshot });
+              }
+              if (dead || changing) return;
+              if (home && !info.owned) unmount();
+              if (home && recovering) { home.resume(); recovering = false; }
+              if (!home && info.epoch) {
+                await loadingRig;
+                if (dead) return;
+                const instance = homeView({ claim: info, view: viewId, localStore, send: homeCall, onError: report });
+                stop = mountRoom(ctx, ref.current, options, instance);
+                home = instance;
+                setNotice(info.desktop?.phase === 'error' ? info.desktop.error : '');
+              }
+              setState({ ...info, snapshot: undefined, editing: Boolean(home) });
+            } catch (error) {
+              if (['unavailable', 'too_large'].includes(error.code) && !home && !stop) {
+                legacy = true;
+                await Promise.all([loadingRig, pullStore()]);
+                if (!dead) {
+                  stop = mountRoom(ctx, ref.current, options);
+                  setState({ available: false, editing: true });
+                  if (error.code === 'too_large' || error.message.startsWith('无法读取旧版')) report(error);
+                }
+              } else report(error);
+            } finally { busy = false; }
+          };
+          handlers.current = {
+            async desktop() {
+              if (!home || changing) return;
+              changing = true;
+              setWorking(true);
+              const old = home;
+              try {
+                const next = await old.handoff('desktop');
+                unmount();
+                if (!dead) setState({ ...next, owner: 'desktop', editing: false });
+              } catch (error) {
+                report(error);
+                const status = await homeCall('status', old.identity).catch(() => null);
+                if (status?.owned && !dead) old.resume();
+                else if (status) unmount();
+                else recovering = true;
+              } finally {
+                changing = false;
+                if (!dead) { setWorking(false); void poll(); }
+              }
+            },
+            async cancel() {
+              try { await homeCall('cancel'); void poll(); } catch (error) { report(error); }
+            },
+          };
+          void poll();
+          const timer = setInterval(poll, 1200);
+          const onPageHide = () => {
+            if (home && !changing) void home.close(true, true).catch(() => {});
+          };
+          document.addEventListener('visibilitychange', poll);
+          window.addEventListener('pagehide', onPageHide);
+          return () => {
+            dead = true;
+            handlers.current = null;
+            clearInterval(timer);
+            document.removeEventListener('visibilitychange', poll);
+            window.removeEventListener('pagehide', onPageHide);
+            if (home && !changing) closeBarrier = home.close(true).catch(() => {});
+            unmount();
+          };
         }, []);
-        return h('div', { style: { position: 'absolute', inset: 0, overflow: 'hidden' }, children: [
-          h('div', { ref, style: { position: 'absolute', inset: 0 } }, 'mount'),
-          error ? h('div', { role: 'alert', style: { position: 'absolute', inset: 0, padding: 24, color: '#fff', background: '#192237' }, children: [
-            h('p', { children: '房间暂时未能打开：' + error }, 'error'),
-            action('重新打开', () => { setPlacement('closed'); setTimeout(() => setPlacement('dock'), 0); }),
-          ] }, 'error') : null,
+        const desktop = state.desktop;
+        const phase = desktop?.phase;
+        const mb = value => Math.round(value / 1048576) + ' MB';
+        const desktopStatus = {
+          preparing: '正在检查桌面运行时…',
+          downloading: phase === 'downloading'
+            ? '正在下载桌面运行时 ' + mb(desktop.bytes) + (desktop.total ? ' / ' + mb(desktop.total) : '') : '',
+          extracting: '下载完成，正在解包桌面运行时…',
+          starting: '正在打开桌面窗口…',
+          stopping: '正在取消桌面启动…',
+          running: '房间已在桌面。可在桌面窗口选择「回到 DSH」。',
+        };
+        const status = working ? '正在保存房间…'
+          : state.owner === 'desktop' ? desktopStatus[phase] || '正在打开桌面窗口…'
+            : state.editing ? (state.available ? '' : '桌面窗口仅在支持的本机 DSH 中提供')
+              : state.owner === 'embed' ? '房间已在另一个 DSH 窗口打开' : '正在打开房间…';
+        return h('div', { style: { position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }, children: [
+          h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '4px 8px', background: '#202b43', color: '#e8eefb', font: '12px system-ui' }, children: [
+            state.editing && state.available && !working ? action(phase === 'error' ? '重试放到桌面' : '放到桌面', () => handlers.current?.desktop()) : null,
+            state.canCancel && phase !== 'stopping' ? action('取消桌面启动', () => handlers.current?.cancel()) : null,
+            status ? h('span', { role: 'status', children: status }, 'status') : null,
+            notice ? h('span', { role: 'alert', children: notice }, 'notice') : null,
+          ] }, 'controls'),
+          h('div', { ref, style: { flex: 1, minHeight: 0, position: 'relative' } }, 'mount'),
         ] });
       }
       function SidebarPanel() {
@@ -343,7 +477,7 @@ function makeFactory() {
             action('打开房间小窗', () => setPlacement('dock')), action('在侧栏打开', openSidebar),
             action('全屏打开', () => setPlacement('full')), h(PreviewLink, {}, 'preview'),
           ] }, 'actions'),
-          h('p', { children: '桌面独立窗口：双击项目中的「打开桌面房间.command」。Web 预览：双击「打开Web预览.command」。' }, 'desktop'),
+          h('p', { children: '在本机房间中可选择「放到桌面」。桌面窗口和 DSH 房间接续同一份家。' }, 'desktop'),
         ] });
       }
       function Overlay() {
