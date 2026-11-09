@@ -1,4 +1,7 @@
 (() => {
+  // <define:ROOMKIT_PACKAGED_LOOKS>
+  var define_ROOMKIT_PACKAGED_LOOKS_default = ["blue", "harness", "chatgpt", "claude", "gemini", "qwen", "kimi", "minimax", "rose"];
+
   // shared/local-home-format.js
   var HOME_LIMIT = 64 * 1024 * 1024;
   var HOME_VERSION = 1;
@@ -135,6 +138,7 @@
   var el = document.getElementById("room");
   var host = window.roomkitHome;
   var desk = new URLSearchParams(location.search).get("desk") === "1";
+  var packagedLooks = typeof define_ROOMKIT_PACKAGED_LOOKS_default === "undefined" ? void 0 : define_ROOMKIT_PACKAGED_LOOKS_default;
   var notice = document.createElement("span");
   function report(error) {
     var _a, _b;
@@ -184,6 +188,8 @@
       desk,
       coach: false,
       bridge: false,
+      rigLooks: packagedLooks,
+      rigAssetBase: "vendor/",
       ext: {
         desk: desk ? window.roomkitDesk : void 0,
         openFull: desk ? () => window.roomkitDesk.openFull() : void 0,

@@ -1,6 +1,6 @@
 {
   "name": "dsh-room",
-  "version": "0.1.0-r03c.2",
+  "version": "0.1.0-r03c.4",
   "description": "DSH 房间插件，带 Canvas Q 版鲸鱼娘、小屋、小院和宿主模型互动。",
   "icon": "assets/icon.svg",
   "keywords": [
@@ -42,6 +42,7 @@
     "lib/work-status.js",
     "locales/en.json",
     "locales/zh.json",
+    "room/vendor/coopanion/LICENSE",
     "scripts/build.mjs",
     "shared/activities.js",
     "shared/agent-request.js",
@@ -86,6 +87,7 @@
     "web/roomkit/paint-furniture.js",
     "web/roomkit/paint-girl.js",
     "web/roomkit/paint-room.js",
+    "web/roomkit/paint-whale.js",
     "web/roomkit/renderer.js",
     "web/roomkit/scene.js",
     "web/roomkit/shell.js",
@@ -100,7 +102,15 @@
     "web/roomkit/world-drafts.js",
     "web/roomkit/world-hub.js",
     "web/roomkit/world-panel.js",
-    "web/roomkit/world-session.js"
+    "web/roomkit/world-session.js",
+    "web/vendor/whale-scheme-chatgpt.json",
+    "web/vendor/whale-scheme-claude.json",
+    "web/vendor/whale-scheme-gemini.json",
+    "web/vendor/whale-scheme-harness.json",
+    "web/vendor/whale-scheme-kimi.json",
+    "web/vendor/whale-scheme-minimax.json",
+    "web/vendor/whale-scheme-qwen.json",
+    "web/vendor/whale-showcase-rig.js"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",

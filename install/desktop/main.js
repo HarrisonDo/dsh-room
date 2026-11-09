@@ -22,7 +22,7 @@ const IS_MAC = process.platform === 'darwin';
 const SIZES = [{ label: '小', w: 320 }, { label: '中', w: 460 }, { label: '大', w: 680 }];
 const MIN_W = 220;
 const WEB_TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
-  '.png': 'image/png', '.webp': 'image/webp', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml' };
+  '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.webp': 'image/webp', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml' };
 const managed = process.env.ROOMKIT_MANAGED === '1' && process.connected && typeof process.send === 'function';
 if (managed) {
   app.setPath('userData', process.env.ROOMKIT_USER_DATA);

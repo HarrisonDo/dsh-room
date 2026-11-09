@@ -21,6 +21,7 @@ const TITLE = '大肥鱼的房间';
 /* 宿主半侧（lib/index.js）把 web/ 挂在这里；贴图拿不到时家具自动退回程序化备选 */
 const ASSET_BASE = '/plugins/dsh-room/web/';
 
+const packagedLooks = typeof ROOMKIT_PACKAGED_LOOKS === 'undefined' ? undefined : ROOMKIT_PACKAGED_LOOKS;
 const STORE_URL = '/plugins/dsh-room/api/store';
 /* 宿主半侧挂在 DSH 自己 /api 下的鉴权接口；页面相对地址，桌面版 dsh-app 协议会带凭据转发 */
 const API_BASE = 'api/dsh-room.';
@@ -235,7 +236,7 @@ function mountRoom(ctx, el, opts, home) {
   const packs = window.RoomKitPacks || [];
   const link = createLink(home);
   const ext = makeExt(ctx, link, opts.onFullscreen);
-  const app = mount(el, Object.assign({ storageKey: 'dsh-room', assetBase: ASSET_BASE, packs, ext }, opts, home?.options));
+  const app = mount(el, Object.assign({ storageKey: 'dsh-room', assetBase: ASSET_BASE, rigLooks: packagedLooks, rigAssetBase: ASSET_BASE + 'vendor/', packs, ext }, opts, home?.options));
   app.groupOn = false;
   try { app.groupOn = home ? home.group() : localStorage.getItem('dsh-room.group') === '1'; } catch (e) { /* 忽略 */ }
   // 社区页的开关：DSH 才有的能力，不放进通用引擎

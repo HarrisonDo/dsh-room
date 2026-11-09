@@ -1,4 +1,7 @@
 (() => {
+  // <define:ROOMKIT_PACKAGED_LOOKS>
+  var define_ROOMKIT_PACKAGED_LOOKS_default = ["blue", "harness", "chatgpt", "claude", "gemini", "qwen", "kimi", "minimax", "rose"];
+
   // demo-theme/whale-girl.js
   var look = { body: "#5b8def", belly: "#eef5ff", hat: "maid", rig: false };
   var WHALE_LOOKS = [look, ...["#8976c4", "#bf745b", "#579977"].map((body) => ({ body, rig: false }))];
@@ -41,7 +44,7 @@
 
   // src/web.js
   var el = document.getElementById("room");
-  var _a;
+  var _a, _b;
   try {
     const qs = new URLSearchParams(location.search);
     const neutral = el.hasAttribute("data-roomkit-example");
@@ -68,6 +71,8 @@
       ext,
       neutral,
       site,
+      rigLooks: typeof define_ROOMKIT_PACKAGED_LOOKS_default !== "undefined" && location.protocol !== "file:" ? define_ROOMKIT_PACKAGED_LOOKS_default : (_b = el.dataset.roomkitRig) == null ? void 0 : _b.split(","),
+      rigAssetBase: typeof define_ROOMKIT_PACKAGED_LOOKS_default !== "undefined" ? "vendor/" : void 0,
       townUrl: site ? location.origin : void 0,
       mode: qs.get("mode") === "edit" ? "edit" : "play",
       ui: qs.get("ui") === "compact" || qs.get("dock") === "1" ? "compact" : qs.get("ui") === "full" ? "full" : "auto",

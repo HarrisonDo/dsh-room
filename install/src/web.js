@@ -27,6 +27,9 @@ try {
     ext,
     neutral,
     site,
+    rigLooks: typeof ROOMKIT_PACKAGED_LOOKS !== 'undefined' && location.protocol !== 'file:'
+      ? ROOMKIT_PACKAGED_LOOKS : el.dataset.roomkitRig?.split(','),
+    rigAssetBase: typeof ROOMKIT_PACKAGED_LOOKS !== 'undefined' ? 'vendor/' : undefined,
     townUrl: site ? location.origin : undefined,
     mode: qs.get('mode') === 'edit' ? 'edit' : 'play',
     ui: qs.get('ui') === 'compact' || qs.get('dock') === '1' ? 'compact' : qs.get('ui') === 'full' ? 'full' : 'auto',

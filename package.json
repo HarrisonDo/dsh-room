@@ -1,6 +1,6 @@
 {
   "name": "dsh-room",
-  "version": "0.1.0-r03c.2",
+  "version": "0.1.0-r03c.4",
   "description": "DSH 房间插件，带 Canvas Q 版鲸鱼娘、小屋、小院和宿主模型互动。",
   "license": "AGPL-3.0-only",
   "type": "module",

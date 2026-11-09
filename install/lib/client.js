@@ -1,4 +1,7 @@
 (() => {
+  // <define:ROOMKIT_PACKAGED_LOOKS>
+  var define_ROOMKIT_PACKAGED_LOOKS_default = ["blue", "harness", "chatgpt", "claude", "gemini", "qwen", "kimi", "minimax", "rose"];
+
   // web/roomkit/iso.js
   var Iso = class {
     constructor(hw = 64, hh = 32) {
@@ -1405,6 +1408,445 @@
     ctx.restore();
   }
 
+  // web/roomkit/paint-emote.js
+  function paintEmote(ctx, kind, t, k, top = 90) {
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, k * 3);
+    const y = -top - 16 - (1 - Math.min(1, k * 4)) * 6;
+    if (kind === "zzz") {
+      ctx.fillStyle = "#9fb4e8";
+      ctx.font = "bold 13px sans-serif";
+      for (let i = 0; i < 3; i++) {
+        const p = (t * 0.5 + i / 3) % 1;
+        ctx.globalAlpha = (1 - p) * 0.9;
+        ctx.fillText("z", 12 + p * 14 + i * 2, -top * 0.7 - p * 26);
+      }
+      ctx.restore();
+      return;
+    }
+    if (kind === "sweat") {
+      ctx.fillStyle = "#8fd0ff";
+      const sy = -top * 0.82;
+      ctx.beginPath();
+      ctx.moveTo(28, sy - 7);
+      ctx.quadraticCurveTo(33, sy + 1, 28, sy + 4);
+      ctx.quadraticCurveTo(23, sy + 1, 28, sy - 7);
+      ctx.fill();
+      ctx.restore();
+      return;
+    }
+    ctx.translate(0, y);
+    ctx.fillStyle = "rgba(255,255,255,.95)";
+    ctx.shadowColor = "rgba(20,30,60,.18)";
+    ctx.shadowBlur = 4;
+    ctx.shadowOffsetY = 1;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(-13, -12, 26, 20, 10);
+    else ctx.rect(-13, -12, 26, 20);
+    ctx.fill();
+    ctx.shadowColor = "transparent";
+    ctx.beginPath();
+    ctx.moveTo(-3, 7);
+    ctx.lineTo(0, 12);
+    ctx.lineTo(3, 7);
+    ctx.fill();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    switch (kind) {
+      case "heart":
+        ctx.fillStyle = "#ff5c8a";
+        ctx.beginPath();
+        ctx.moveTo(0, 5);
+        ctx.bezierCurveTo(-9, -1, -5, -9, 0, -4);
+        ctx.bezierCurveTo(5, -9, 9, -1, 0, 5);
+        ctx.fill();
+        break;
+      case "note":
+        ctx.fillStyle = "#6b7fd7";
+        ctx.font = "bold 14px sans-serif";
+        ctx.fillText("♪", 0, -1);
+        break;
+      case "!":
+        ctx.fillStyle = "#f08a24";
+        ctx.font = "bold 15px sans-serif";
+        ctx.fillText("!", 0, -1);
+        break;
+      case "?":
+        ctx.fillStyle = "#6b7fd7";
+        ctx.font = "bold 14px sans-serif";
+        ctx.fillText("?", 0, -1);
+        break;
+      case "spark":
+        ctx.fillStyle = "#f2c14e";
+        for (let i = 0; i < 4; i++) {
+          const a = i / 4 * Math.PI * 2 + t * 2;
+          ctx.beginPath();
+          ctx.arc(Math.cos(a) * 5, Math.sin(a) * 4 - 2, 1.8, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.beginPath();
+        ctx.arc(0, -2, 2.6, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      case "idea":
+        ctx.fillStyle = "#f2c14e";
+        ctx.beginPath();
+        ctx.arc(0, -3, 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#c9a24a";
+        ctx.fillRect(-2.5, 2, 5, 3);
+        break;
+      case "anger":
+        ctx.strokeStyle = "#e8505b";
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        ctx.moveTo(-5, -7);
+        ctx.lineTo(-1, -3);
+        ctx.moveTo(5, -7);
+        ctx.lineTo(1, -3);
+        ctx.moveTo(-5, 3);
+        ctx.lineTo(-1, -1);
+        ctx.moveTo(5, 3);
+        ctx.lineTo(1, -1);
+        ctx.stroke();
+        break;
+      case "think":
+      default: {
+        ctx.fillStyle = "#6b7fd7";
+        for (let i = 0; i < 3; i++) {
+          const on = Math.floor(t * 3) % 3 >= i;
+          ctx.globalAlpha = on ? 1 : 0.3;
+          ctx.beginPath();
+          ctx.arc(-6 + i * 6, -2, 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+    ctx.restore();
+  }
+
+  // web/roomkit/paint-whale.js
+  function bodyPath(ctx) {
+    ctx.beginPath();
+    ctx.moveTo(-27, -18);
+    ctx.bezierCurveTo(-27, -40, -12, -46, 2, -46);
+    ctx.bezierCurveTo(20, -46, 29, -34, 29, -20);
+    ctx.bezierCurveTo(29, -6, 18, 0, 0, 0);
+    ctx.bezierCurveTo(-18, 0, -27, -6, -27, -18);
+    ctx.closePath();
+  }
+  function tail2(ctx, color, wag, back) {
+    ctx.save();
+    if (back) {
+      ctx.translate(-16, -9);
+      ctx.rotate(0.5 + wag);
+    } else {
+      ctx.translate(-22, -17);
+      ctx.rotate(wag);
+    }
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(4, 5);
+    ctx.quadraticCurveTo(-8, 2, -12, -12);
+    ctx.lineTo(-6, -13);
+    ctx.quadraticCurveTo(-2, -2, 6, -3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(-15, -15, 8, 3.6, -0.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(-7, -19, 8, 3.6, -1.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  function eye2(ctx, x, y, s, open, look2) {
+    if (open <= 0.12) {
+      ctx.strokeStyle = "#1d2740";
+      ctx.lineWidth = 1.6;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(x - 3 * s, y);
+      ctx.quadraticCurveTo(x, y + 2.2 * s, x + 3 * s, y);
+      ctx.stroke();
+      return;
+    }
+    ctx.fillStyle = "#1d2740";
+    ctx.beginPath();
+    ctx.ellipse(x + look2, y, 3 * s, 4 * s * open, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.arc(x + look2 + 0.9 * s, y - 1.5 * s * open, 1.15 * s, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  function happyEye(ctx, x, y, s) {
+    ctx.strokeStyle = "#1d2740";
+    ctx.lineWidth = 1.7;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(x - 3 * s, y + 1);
+    ctx.quadraticCurveTo(x, y - 3 * s, x + 3 * s, y + 1);
+    ctx.stroke();
+  }
+  function paintWhale(ctx, a, t) {
+    const look2 = a.look || {};
+    const body = look2.body || "#5b8def", belly = look2.belly || "#eef5ff";
+    const size = (look2.size || 1.4) * (a.scale || 1);
+    const pose = a.pose || "stand";
+    const front = a.front !== false, right = a.right !== false;
+    const ph = a.phase || 0;
+    let lift = 0, sx = 1, sy = 1, rot = 0, wag = Math.sin(t * 2.2 + (a.seed || 0)) * 0.12;
+    let finRot = 0.5, finX = -2, finY = -12;
+    const breathe = Math.sin(t * 2.4 + (a.seed || 0));
+    switch (pose) {
+      case "walk":
+      case "run": {
+        const k = pose === "run" ? 1.6 : 1;
+        lift = Math.abs(Math.sin(ph)) * 6 * k;
+        const land = 1 - Math.abs(Math.sin(ph));
+        sy = 1 - land * 0.06 * k + (1 - land) * 0.03;
+        sx = 1 + land * 0.05 * k;
+        rot = 0.06 * k;
+        wag = Math.sin(ph * 2) * 0.22;
+        finRot = 0.5 + Math.sin(ph * 2) * 0.45;
+        break;
+      }
+      case "sit":
+        sy = 0.93 + breathe * 0.012;
+        sx = 1.04;
+        finRot = 0.9;
+        break;
+      case "sleep":
+        sy = 0.78 + Math.sin(t * 1.6) * 0.02;
+        sx = 1.12;
+        wag = Math.sin(t * 1.1) * 0.05;
+        finRot = 1.2;
+        break;
+      case "work":
+        sy = 0.95 + breathe * 0.01;
+        finRot = 0.4 + Math.sin(t * 14) * 0.35;
+        finY = -15;
+        break;
+      case "read":
+        sy = 0.95 + breathe * 0.012;
+        finRot = -0.2;
+        finX = 6;
+        finY = -14;
+        break;
+      case "eat":
+        sy = 0.97 + Math.abs(Math.sin(t * 7)) * 0.03;
+        finRot = -0.1;
+        finX = 7;
+        finY = -13;
+        break;
+      case "dance":
+        lift = Math.abs(Math.sin(t * 6)) * 5;
+        rot = Math.sin(t * 6) * 0.18;
+        wag = Math.sin(t * 12) * 0.3;
+        finRot = -0.6 + Math.sin(t * 12) * 0.5;
+        break;
+      case "jump": {
+        const k = Math.abs(Math.sin(t * 5.5));
+        lift = k * 16;
+        sy = 1 + k * 0.08;
+        sx = 1 - k * 0.05;
+        finRot = -1 + Math.sin(t * 11) * 0.4;
+        break;
+      }
+      case "sad":
+        sy = 0.93;
+        sx = 1.03;
+        finRot = 1.1;
+        wag = Math.sin(t * 0.8) * 0.04;
+        break;
+      case "wave":
+        finRot = -1.3 + Math.sin(t * 10) * 0.4;
+        finX = -2;
+        finY = -26;
+        sy = 1 + breathe * 0.015;
+        break;
+      default:
+        sy = 1 + breathe * 0.018;
+        sx = 1 - breathe * 8e-3;
+    }
+    sy *= 1 - (a.sq || 0);
+    sx *= 1 + (a.sq || 0) * 0.6;
+    ctx.save();
+    ctx.scale(size, size);
+    if (!right) ctx.scale(-1, 1);
+    ctx.translate(0, -lift);
+    ctx.rotate(rot);
+    ctx.scale(sx, sy);
+    const dark = shade(body, -0.12);
+    if (front) tail2(ctx, dark, wag, false);
+    const g = ctx.createLinearGradient(-20, -46, 24, 0);
+    g.addColorStop(0, shade(body, 0.16));
+    g.addColorStop(0.6, body);
+    g.addColorStop(1, shade(body, -0.1));
+    bodyPath(ctx);
+    ctx.fillStyle = g;
+    ctx.fill();
+    if (front) {
+      ctx.save();
+      bodyPath(ctx);
+      ctx.clip();
+      ctx.fillStyle = belly;
+      ctx.beginPath();
+      ctx.ellipse(10, -6, 20, 11, -0.08, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = rgba(shade(belly, -0.12), 0.6);
+      for (let i = 0; i < 3; i++) {
+        ctx.fillRect(2 + i * 6, -9 + i * 0.6, 3.5, 1.2);
+      }
+      ctx.restore();
+    } else {
+      ctx.save();
+      bodyPath(ctx);
+      ctx.clip();
+      ctx.fillStyle = rgba(shade(body, 0.25), 0.35);
+      ctx.beginPath();
+      ctx.ellipse(2, -40, 16, 5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.fillStyle = "rgba(255,255,255,.32)";
+    ctx.beginPath();
+    ctx.ellipse(-9, -37, 8, 4, -0.35, 0, Math.PI * 2);
+    ctx.fill();
+    if (!front) tail2(ctx, dark, wag, true);
+    if (front) {
+      const expr = a.expr || (pose === "sleep" ? "sleep" : pose === "sad" ? "sad" : pose === "jump" || pose === "dance" ? "happy" : null);
+      const blink = a.blink || 0;
+      const lookX = pose === "read" ? -0.6 : pose === "look" ? Math.sin(t * 1.3) * 1.6 : 0;
+      const eyeY = pose === "read" ? -23.5 : -25;
+      if (expr === "sleep") {
+        eye2(ctx, 13, eyeY + 1, 1, 0, 0);
+        eye2(ctx, 23, eyeY, 0.85, 0, 0);
+      } else if (expr === "happy" || expr === "love") {
+        happyEye(ctx, 13, eyeY, 1);
+        happyEye(ctx, 23, eyeY - 0.5, 0.85);
+      } else {
+        const open = (expr === "surprised" ? 1.25 : expr === "sad" ? 0.75 : pose === "read" ? 0.6 : 1) * (1 - blink);
+        eye2(ctx, 13, eyeY, 1, open, lookX);
+        eye2(ctx, 23, eyeY - 0.8, 0.85, open, lookX);
+        if (expr === "sad") {
+          ctx.strokeStyle = "#1d2740";
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          ctx.moveTo(9, -31);
+          ctx.lineTo(15, -32.5);
+          ctx.moveTo(20.5, -33);
+          ctx.lineTo(25.5, -32);
+          ctx.stroke();
+        }
+      }
+      ctx.fillStyle = rgba(look2.cheek || "#ff8fab", expr === "love" || expr === "shy" ? 0.8 : 0.5);
+      ctx.beginPath();
+      ctx.ellipse(8.5, -18.5, 4, 2.3, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(26, -19.5, 3.2, 2, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#1d2740";
+      ctx.lineWidth = 1.4;
+      ctx.lineCap = "round";
+      if (pose === "eat") {
+        const o = Math.abs(Math.sin(t * 7));
+        ctx.fillStyle = "#7a2c3a";
+        ctx.beginPath();
+        ctx.ellipse(18.5, -18.5, 2.4, 0.8 + o * 2, 0, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (expr === "surprised") {
+        ctx.beginPath();
+        ctx.ellipse(18.5, -18.5, 1.8, 2.3, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      } else if (expr === "sad") {
+        ctx.beginPath();
+        ctx.moveTo(16.5, -17.5);
+        ctx.quadraticCurveTo(18.7, -20, 21, -17.5);
+        ctx.stroke();
+      } else if (expr === "sleep") {
+        ctx.beginPath();
+        ctx.moveTo(17.5, -19);
+        ctx.lineTo(20, -19);
+        ctx.stroke();
+      } else {
+        ctx.beginPath();
+        ctx.moveTo(16.3, -20);
+        ctx.quadraticCurveTo(18.7, expr === "happy" ? -16 : -17.4, 21.2, -20);
+        ctx.stroke();
+      }
+    }
+    ctx.save();
+    ctx.translate(finX, finY);
+    ctx.rotate(finRot);
+    ctx.fillStyle = dark;
+    ctx.beginPath();
+    ctx.ellipse(-4, 0, 8, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    if (front && pose === "read") {
+      ctx.save();
+      ctx.translate(15, -12);
+      ctx.rotate(-0.12);
+      ctx.fillStyle = look2.accent || "#f28f6b";
+      ctx.fillRect(-9, -7, 18, 11);
+      ctx.fillStyle = "#fffaf0";
+      ctx.fillRect(-8, -8, 7.5, 10);
+      ctx.fillRect(0.5, -8, 7.5, 10);
+      ctx.strokeStyle = "rgba(80,80,100,.35)";
+      ctx.lineWidth = 0.8;
+      for (let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        ctx.moveTo(-7, -6 + i * 2.6);
+        ctx.lineTo(-2, -6 + i * 2.6);
+        ctx.moveTo(1.5, -6 + i * 2.6);
+        ctx.lineTo(6.5, -6 + i * 2.6);
+        ctx.stroke();
+      }
+      ctx.restore();
+    } else if (front && pose === "eat") {
+      ctx.save();
+      ctx.translate(17, -7);
+      ctx.fillStyle = "#f4f1ea";
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 8, 3, 0, 0, Math.PI);
+      ctx.fill();
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath();
+      ctx.ellipse(0, -0.5, 7, 2.6, 0, Math.PI, 0);
+      ctx.fill();
+      ctx.restore();
+    }
+    if (look2.hat === "maid") {
+      ctx.fillStyle = "#ffffff";
+      for (let i = -3; i <= 3; i++) {
+        ctx.beginPath();
+        ctx.arc(i * 4.2 + 2, -44.5 + Math.abs(i) * 0.6, 3.1, Math.PI, 0);
+        ctx.fill();
+      }
+      ctx.fillStyle = "#26304a";
+      ctx.fillRect(-11, -45, 26, 2.2);
+    } else if (look2.hat === "bow") {
+      ctx.fillStyle = look2.accent || "#ff7aa2";
+      ctx.beginPath();
+      ctx.ellipse(6, -47, 5, 3.2, -0.5, 0, Math.PI * 2);
+      ctx.ellipse(14, -47, 5, 3.2, 0.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(10, -46.5, 2, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (look2.hat === "cap") {
+      ctx.fillStyle = look2.accent || "#f2c14e";
+      ctx.beginPath();
+      ctx.ellipse(2, -44, 15, 7, 0, Math.PI, 0);
+      ctx.fill();
+      ctx.fillRect(10, -45, 14, 3);
+    }
+    ctx.restore();
+  }
+
   // web/roomkit/token-body.js
   var SITTING = /* @__PURE__ */ new Set(["sit", "work", "read", "eat", "sleep"]);
   var TokenBody = class {
@@ -1550,7 +1992,7 @@
     g.fillStyle = ink;
     g.lineWidth = 2;
     g.lineCap = "round";
-    const eye2 = (x) => {
+    const eye3 = (x) => {
       if (expr === "sleep" || blink > 0.6) {
         g.beginPath();
         g.moveTo(x - 3, -28);
@@ -1574,8 +2016,8 @@
       g.fill();
       g.fillStyle = ink;
     };
-    eye2(1);
-    eye2(13);
+    eye3(1);
+    eye3(13);
     g.beginPath();
     if (expr === "sad" || expr === "worried") g.arc(7, -19, 2.6, Math.PI * 1.15, Math.PI * 1.85);
     else if (expr === "sleep") {
@@ -1586,26 +2028,19 @@
     g.stroke();
   }
 
-  // demo-theme/whale-girl.js
-  var look = { body: "#5b8def", belly: "#eef5ff", hat: "maid", rig: false };
-  var DEFAULT_CHARACTERS = [];
-  var DEFAULT_ROLE = { id: "role", name: "示例角色", kind: "girl", brain: "manual", look };
-  var APPEARANCE_NOTICE = "「大肥鱼」鲸鱼娘原设为溟月（上善无形），DeepSeek 女仆二创为 ZipZipPipe，形象沿用 CC BY-NC-SA 4.0。<br>";
-  var WHALE_LOOKS = [look, ...["#8976c4", "#bf745b", "#579977"].map((body) => ({ body, rig: false }))];
-  var RigPool = class {
-  };
+  // web/roomkit/bodies.js
   var GirlBody = class {
     constructor(agent) {
-      this.agent = agent;
+      this.a = agent;
     }
     get metrics() {
-      const size = this.agent.look.size || 1;
-      return { h: GIRL_H * size, rx: 30 * size, ry: 54 * size };
-    }
-    draw(ctx, time) {
-      paintGirl(ctx, this.agent, time);
+      const s = this.a.look.size || 1;
+      return { h: GIRL_H * s, rx: 30 * s, ry: 54 * s };
     }
     update() {
+    }
+    draw(g, t) {
+      paintGirl(g, this.a, t);
     }
     bounce() {
     }
@@ -1616,7 +2051,318 @@
     dispose() {
     }
   };
-  var bodyFor = (agent) => agent.data.kind === "girl" ? new GirlBody(agent) : new TokenBody(agent);
+  var WhaleBody = class extends GirlBody {
+    get metrics() {
+      const s = this.a.look.size || 1.4;
+      return { h: 62 * s, rx: 30 * s, ry: 30 * s };
+    }
+    draw(g, t) {
+      paintWhale(g, this.a, t);
+    }
+  };
+  var SVGNS = "http://www.w3.org/2000/svg";
+  var STAGE = 1e3;
+  var X0 = 500;
+  var FLOOR = 900;
+  var S0 = 0.45;
+  var SCALE = 0.42;
+  var EXPR = { happy: "happy", surprised: "surprised", love: "love", sad: "sad", sleep: "sleepy", shy: "shy", determined: "determined", angry: "angry", wink: "wink", think: "thinking", worried: "worried", excited: "excited", smug: "smug", confused: "confused" };
+  var SITS = /* @__PURE__ */ new Set(["sit", "work", "read", "eat"]);
+  function hueOf(hex) {
+    const [r, g, b] = hexToRgb(hex), max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+    if (!d) return 0;
+    const h = max === r ? (g - b) / d % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    return (h * 60 + 360) % 360;
+  }
+  var BASE_HUE = hueOf("#5b8def");
+  var RECOLOR = /(?:^|\/)(hair_|bangs|sidelocks|ahoge|fin_|tail|bow|waist_bow|eye[LR]_iris|eye[LR]_hl)/;
+  var RigPool = class {
+    constructor(app) {
+      this.app = app;
+      this.lib = typeof window !== "undefined" && window.RoomKitRig || null;
+      this.max = app.opts.rigMax != null ? app.opts.rigMax : 6;
+      this.used = /* @__PURE__ */ new Set();
+      this.images = /* @__PURE__ */ new Map();
+      this.schemes = /* @__PURE__ */ new Map();
+      this.host = null;
+    }
+    get available() {
+      var _a;
+      return Boolean(this.lib || ((_a = this.app.opts.rigLooks) == null ? void 0 : _a.length)) && this.used.size < this.max && !this.broken;
+    }
+    loadRuntime() {
+      if (this.lib) return Promise.resolve(this.lib);
+      this.runtime || (this.runtime = new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = (this.app.opts.rigAssetBase || "/assets/") + "whale-showcase-rig.js";
+        script.onload = () => {
+          if (window.RoomKitRig) resolve(this.lib = window.RoomKitRig);
+          else reject(new Error("分件模型未加载"));
+        };
+        script.onerror = () => reject(new Error("分件模型未加载"));
+        document.head.appendChild(script);
+      }).catch((error) => {
+        this.runtime = null;
+        throw error;
+      }));
+      return this.runtime;
+    }
+    loadScheme(scheme) {
+      var _a;
+      if (!scheme || !((_a = this.app.opts.rigLooks) == null ? void 0 : _a.includes(scheme))) return null;
+      if (!this.schemes.has(scheme)) {
+        this.schemes.set(scheme, fetch(`${this.app.opts.rigAssetBase || "/assets/"}whale-scheme-${scheme}.json`).then((response) => {
+          if (!response.ok) throw new Error("分件配色未加载");
+          return response.json();
+        }).catch((error) => {
+          this.schemes.delete(scheme);
+          throw error;
+        }));
+      }
+      return this.schemes.get(scheme);
+    }
+    ensureHost() {
+      if (this.host) return this.host;
+      const h = document.createElement("div");
+      h.className = "rk-rigs";
+      h.style.cssText = "position:absolute;left:0;top:0;width:0;height:0;overflow:hidden;visibility:hidden;pointer-events:none";
+      this.app.root.appendChild(h);
+      this.host = h;
+      return h;
+    }
+    loadImage(url) {
+      let p = this.images.get(url);
+      if (!p) {
+        p = new Promise((ok, bad) => {
+          const im = new Image();
+          im.onload = () => ok(im);
+          im.onerror = bad;
+          im.src = url;
+        });
+        this.images.set(url, p);
+      }
+      return p;
+    }
+    /** 给一只角色建 figure：hue 非 0 时，头发/衣服这些部件的贴图先偏色（结果缓存，几只同色只算一次） */
+    async figure(look2) {
+      const [lib, textures] = await Promise.all([this.loadRuntime(), this.loadScheme(look2.rigScheme)]);
+      const hue = Math.round(look2.body ? hueOf(look2.body) - BASE_HUE : 0);
+      const shift = (hue % 360 + 360) % 360;
+      const assetOf = (p) => (textures == null ? void 0 : textures[p]) || (lib.asset ? lib.asset(String(p)) : p);
+      const load2 = async (url) => {
+        const key2 = String(url);
+        const im = await this.loadImage(key2);
+        const name = lib.nameOf ? lib.nameOf(key2) : key2;
+        if (!shift || !RECOLOR.test(name) || !("filter" in CanvasRenderingContext2D.prototype)) return im;
+        const ck = shift + "|" + key2;
+        let c = this.images.get(ck);
+        if (!c) {
+          c = document.createElement("canvas");
+          c.width = im.width;
+          c.height = im.height;
+          const g = c.getContext("2d");
+          g.filter = `hue-rotate(${shift}deg)`;
+          g.drawImage(im, 0, 0);
+          this.images.set(ck, c);
+        }
+        return c;
+      };
+      return lib.createWhaleFigure(lib.base || new URL("./", location.href), { model: lib.model, scheme: look2.rigScheme, asset: assetOf, loadImage: load2, kit: { createRig: lib.createRig } });
+    }
+  };
+  var RigBody = class {
+    constructor(agent, app) {
+      this.a = agent;
+      this.app = app;
+      this.pool = app.rig;
+      this.fallback = new GirlBody(agent);
+      this.ctl = null;
+      this.canvas = null;
+      this.res = 0;
+      this._pose = null;
+      this._right = null;
+      this._expr = null;
+      this._acc = 0;
+      this._talkAt = 0;
+      this._dead = false;
+      this.pool.used.add(this);
+      this.pool.figure(agent.look).then((fig) => this._init(fig)).catch((e) => this._fail(e));
+    }
+    get metrics() {
+      const s = this.a.look.size || 1;
+      return { h: 104 * s, rx: 34 * s, ry: 54 * s };
+    }
+    get ready() {
+      return !!(this.ctl && this.canvas);
+    }
+    _fail(e) {
+      console.warn("[roomkit] 真模型不可用，改用 Q 版角色:", e && e.message);
+      if (!this.app.opts.rigLooks) this.pool.broken = true;
+      this.pool.used.delete(this);
+      this.ctl = null;
+    }
+    _init(figure) {
+      if (this._dead) {
+        figure.dispose && figure.dispose();
+        return;
+      }
+      this.figure = figure;
+      const host = this.pool.ensureHost();
+      const svg = document.createElementNS(SVGNS, "svg");
+      svg.setAttribute("viewBox", `0 0 ${STAGE} ${STAGE}`);
+      svg.setAttribute("width", STAGE);
+      svg.setAttribute("height", STAGE);
+      svg.style.cssText = "position:absolute;left:0;top:0;overflow:visible";
+      svg.innerHTML = '<ellipse rx="0" ry="0"></ellipse><g></g><g></g>';
+      host.appendChild(svg);
+      this.svg = svg;
+      const [shadowEl, petG, fxG] = svg.children;
+      this.petG = petG;
+      this.view = figure.model.view;
+      const lib = this.pool.lib;
+      this.ctl = lib.createPet({ petG, shadowEl, fxG }, {
+        figure,
+        sfx: { play: () => {
+        } },
+        ground: "free",
+        roam: "off",
+        startX: X0,
+        startY: FLOOR,
+        bounds: () => ({ W: STAGE, H: STAGE, floorY: FLOOR, S: S0 })
+      });
+      this.ctl.pet.fy = FLOOR;
+      this.ctl.setRoam("off");
+      this.update(1 / 60, true);
+    }
+    /** 按相机缩放调模型分辨率：放大看也清楚，缩小时不白费 GPU */
+    _fitRes() {
+      const z = this.app.renderer.cam.z, want = SCALE * (this.a.look.size || 1) * z / S0;
+      if (this.res && Math.abs(want - this.res) / this.res < 0.1) return;
+      this.res = want;
+      this.svg.setAttribute("width", STAGE * want);
+      this.svg.setAttribute("height", STAGE * want);
+    }
+    /** 引擎的姿态 → kit 的动作（kit 的动作会自己结束的，比如 look/dance/wave，到点再发一次） */
+    _applyPose(pose) {
+      const c = this.ctl, p = c.pet;
+      if (pose === "walk" || pose === "run") {
+        const tx = this.a.right ? STAGE - 100 : 100;
+        if (p.mode !== pose) c.walkTo(tx, pose === "run", 0, FLOOR);
+        p.target = tx;
+        p.targetY = FLOOR;
+        this._pose = pose;
+        return;
+      }
+      const changed = pose !== this._pose;
+      const idle = p.mode === "idle";
+      let ok = true;
+      if (SITS.has(pose)) {
+        if (changed || p.mode !== "sit") ok = c.act("sit");
+      } else if (pose === "sleep") {
+        if (changed || p.mode !== "sleep") ok = c.act("sleep");
+      } else if (pose === "look") {
+        if (changed || idle) ok = c.act("look");
+      } else if (pose === "dance") {
+        if (changed || idle) ok = c.act("dance");
+      } else if (pose === "jump") {
+        if (changed || idle) ok = c.act("hop");
+      } else if (pose === "wave") {
+        if (changed || !p.pulse) ok = c.act("wave");
+      } else if (pose === "sad") {
+        if (changed) {
+          if (p.mode !== "idle") c.act("stand");
+          c.setExpr("sad", 3.5);
+        }
+      } else if (changed || (p.mode === "walk" || p.mode === "run")) ok = c.act("stand");
+      if (ok) this._pose = pose;
+    }
+    update(dt, force) {
+      if (!this.ctl) return;
+      const a = this.a, c = this.ctl, p = c.pet;
+      this._acc += dt;
+      const step = this.app.focusAgent && this.app.focusAgent() === a ? 0 : 1 / 30;
+      if (!force && this._acc < step) return;
+      const d = Math.min(0.05, this._acc);
+      this._acc = 0;
+      this._fitRes();
+      this._applyPose(a.pose);
+      const walking = a.pose === "walk" || a.pose === "run";
+      if (this._right !== a.right && !walking) {
+        p.facing = a.right ? 1 : -1;
+      }
+      this._right = a.right;
+      if (a.expr !== this._expr) {
+        this._expr = a.expr;
+        const m = a.expr && EXPR[a.expr];
+        if (m) c.setExpr(m, Math.max(0.6, a._exprUntil - a.t));
+      }
+      if (a.speech && a.t < a.speech.until - 0.3 && a.t >= this._talkAt) {
+        c.talk();
+        this._talkAt = a.t + 0.09 + Math.random() * 0.1;
+      }
+      try {
+        c.step(d);
+        if (walking) {
+          p.x = X0;
+          p.prevA = X0;
+          p.gy = FLOOR;
+          p.fy = FLOOR;
+        }
+        c.render();
+      } catch (e) {
+        this._fail(e);
+        return;
+      }
+      if (!this.canvas) this.canvas = this.petG.querySelector("canvas");
+    }
+    draw(g, t) {
+      if (!this.ready || !this.ctl.pet.xf) {
+        this.fallback.draw(g, t);
+        return;
+      }
+      const x = this.ctl.pet.xf, k = SCALE * (this.a.look.size || 1) / S0, v = this.view;
+      g.save();
+      g.translate((x.AX - X0) * k, (x.AY - FLOOR) * k);
+      g.rotate(x.rot * Math.PI / 180);
+      g.scale(x.kx * k, x.ky * k);
+      g.translate(-x.ax, -x.ay);
+      g.drawImage(this.canvas, v[0], v[1], v[2] - v[0], v[3] - v[1]);
+      g.restore();
+    }
+    bounce(k) {
+      if (this.ctl) this.ctl.pet.sqv -= 2.2 * k;
+    }
+    talk() {
+      if (this.ctl) this.ctl.talk();
+    }
+    /** 鼠标的世界坐标 → kit 舞台坐标：她会看着鼠标，鼠标来回摸还会害羞 */
+    pointer(wx, wy, ax, ay) {
+      if (!this.ctl) return;
+      const k = SCALE * (this.a.look.size || 1) / S0;
+      this.ctl.pointerMove({ x: X0 + (wx - ax) / k, y: FLOOR + (wy - ay) / k });
+    }
+    pointerLeave() {
+      if (this.ctl) this.ctl.pointerLeave();
+    }
+    dispose() {
+      this._dead = true;
+      this.pool.used.delete(this);
+      if (this.figure && this.figure.dispose) this.figure.dispose();
+      if (this.svg) this.svg.remove();
+      this.ctl = null;
+      this.canvas = null;
+    }
+  };
+  function bodyFor(agent, app) {
+    var _a, _b, _c, _d, _e, _f;
+    const kind = agent.data.kind || "girl";
+    if (((_a = app.opts) == null ? void 0 : _a.neutral) && !((_b = app.opts) == null ? void 0 : _b.rigLooks) || kind === "token") return new TokenBody(agent);
+    if (kind === "whale") return new WhaleBody(agent);
+    const rig = ((_c = app.opts) == null ? void 0 : _c.site) || ((_d = app.opts) == null ? void 0 : _d.rigLooks) ? agent.look.rig === true : agent.look.rig !== false;
+    if (kind === "girl" && rig && ((_e = app.rig) == null ? void 0 : _e.available)) return new RigBody(agent, app);
+    if (kind !== "girl" && ((_f = app.opts) == null ? void 0 : _f.site)) return new TokenBody(agent);
+    return new GirlBody(agent);
+  }
 
   // web/roomkit/agents.js
   var POSE_NAMES = {
@@ -3393,123 +4139,6 @@
     return c;
   }
 
-  // web/roomkit/paint-emote.js
-  function paintEmote(ctx, kind, t, k, top = 90) {
-    ctx.save();
-    ctx.globalAlpha = Math.min(1, k * 3);
-    const y = -top - 16 - (1 - Math.min(1, k * 4)) * 6;
-    if (kind === "zzz") {
-      ctx.fillStyle = "#9fb4e8";
-      ctx.font = "bold 13px sans-serif";
-      for (let i = 0; i < 3; i++) {
-        const p = (t * 0.5 + i / 3) % 1;
-        ctx.globalAlpha = (1 - p) * 0.9;
-        ctx.fillText("z", 12 + p * 14 + i * 2, -top * 0.7 - p * 26);
-      }
-      ctx.restore();
-      return;
-    }
-    if (kind === "sweat") {
-      ctx.fillStyle = "#8fd0ff";
-      const sy = -top * 0.82;
-      ctx.beginPath();
-      ctx.moveTo(28, sy - 7);
-      ctx.quadraticCurveTo(33, sy + 1, 28, sy + 4);
-      ctx.quadraticCurveTo(23, sy + 1, 28, sy - 7);
-      ctx.fill();
-      ctx.restore();
-      return;
-    }
-    ctx.translate(0, y);
-    ctx.fillStyle = "rgba(255,255,255,.95)";
-    ctx.shadowColor = "rgba(20,30,60,.18)";
-    ctx.shadowBlur = 4;
-    ctx.shadowOffsetY = 1;
-    ctx.beginPath();
-    if (ctx.roundRect) ctx.roundRect(-13, -12, 26, 20, 10);
-    else ctx.rect(-13, -12, 26, 20);
-    ctx.fill();
-    ctx.shadowColor = "transparent";
-    ctx.beginPath();
-    ctx.moveTo(-3, 7);
-    ctx.lineTo(0, 12);
-    ctx.lineTo(3, 7);
-    ctx.fill();
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    switch (kind) {
-      case "heart":
-        ctx.fillStyle = "#ff5c8a";
-        ctx.beginPath();
-        ctx.moveTo(0, 5);
-        ctx.bezierCurveTo(-9, -1, -5, -9, 0, -4);
-        ctx.bezierCurveTo(5, -9, 9, -1, 0, 5);
-        ctx.fill();
-        break;
-      case "note":
-        ctx.fillStyle = "#6b7fd7";
-        ctx.font = "bold 14px sans-serif";
-        ctx.fillText("♪", 0, -1);
-        break;
-      case "!":
-        ctx.fillStyle = "#f08a24";
-        ctx.font = "bold 15px sans-serif";
-        ctx.fillText("!", 0, -1);
-        break;
-      case "?":
-        ctx.fillStyle = "#6b7fd7";
-        ctx.font = "bold 14px sans-serif";
-        ctx.fillText("?", 0, -1);
-        break;
-      case "spark":
-        ctx.fillStyle = "#f2c14e";
-        for (let i = 0; i < 4; i++) {
-          const a = i / 4 * Math.PI * 2 + t * 2;
-          ctx.beginPath();
-          ctx.arc(Math.cos(a) * 5, Math.sin(a) * 4 - 2, 1.8, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        ctx.beginPath();
-        ctx.arc(0, -2, 2.6, 0, Math.PI * 2);
-        ctx.fill();
-        break;
-      case "idea":
-        ctx.fillStyle = "#f2c14e";
-        ctx.beginPath();
-        ctx.arc(0, -3, 5, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = "#c9a24a";
-        ctx.fillRect(-2.5, 2, 5, 3);
-        break;
-      case "anger":
-        ctx.strokeStyle = "#e8505b";
-        ctx.lineWidth = 2.2;
-        ctx.beginPath();
-        ctx.moveTo(-5, -7);
-        ctx.lineTo(-1, -3);
-        ctx.moveTo(5, -7);
-        ctx.lineTo(1, -3);
-        ctx.moveTo(-5, 3);
-        ctx.lineTo(-1, -1);
-        ctx.moveTo(5, 3);
-        ctx.lineTo(1, -1);
-        ctx.stroke();
-        break;
-      case "think":
-      default: {
-        ctx.fillStyle = "#6b7fd7";
-        for (let i = 0; i < 3; i++) {
-          const on = Math.floor(t * 3) % 3 >= i;
-          ctx.globalAlpha = on ? 1 : 0.3;
-          ctx.beginPath();
-          ctx.arc(-6 + i * 6, -2, 2, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-    }
-    ctx.restore();
-  }
-
   // web/roomkit/renderer.js
   var Sprites = class {
     constructor(base) {
@@ -4244,6 +4873,13 @@
       this.el.drawer.classList.remove("on");
     }
   };
+
+  // demo-theme/whale-girl.js
+  var look = { body: "#5b8def", belly: "#eef5ff", hat: "maid", rig: false };
+  var DEFAULT_CHARACTERS = [];
+  var DEFAULT_ROLE = { id: "role", name: "示例角色", kind: "girl", brain: "manual", look };
+  var APPEARANCE_NOTICE = "「大肥鱼」鲸鱼娘原设为溟月（上善无形），DeepSeek 女仆二创为 ZipZipPipe，形象沿用 CC BY-NC-SA 4.0。<br>";
+  var WHALE_LOOKS = [look, ...["#8976c4", "#bf745b", "#579977"].map((body) => ({ body, rig: false }))];
 
   // web/roomkit/character.js
   var KINDS = ["greet", "idle", "night", "poke", "cheer", "oops", "wait", "chat"];
@@ -8026,6 +8662,33 @@
   var MAT_KINDS = [["wood", "木地板"], ["tile", "瓷砖"], ["carpet", "地毯"], ["stone", "石板"], ["grass", "草地"], ["plain", "纯色"]];
   var PATTERNS = [["plain", "纯色"], ["stripes", "竖条纹"], ["dots", "波点"], ["bricks", "砖墙"]];
   var AGENT_NAMES = ["小蓝", "泡泡", "团子", "小鲸", "阿肥", "米粒", "豆豆", "浪花"];
+  var ROLE_LOOKS = [
+    ["q", "Q 版大肥鱼", "girl", { body: "#5b8def", belly: "#eef5ff", hat: "maid", rig: false }],
+    ["whale", "小鲸鱼 · 球球", "whale", { body: "#7ec8e3", belly: "#f2fbff", size: 1.1 }],
+    ["legacy", "旧版走路鲸鱼", "token", { body: "#7fb8d8", accent: "#8fd28f" }]
+  ];
+  var RIG_COLORS = [
+    ["blue", "原版蓝发", "deepseek"],
+    ["harness", "纯黑"],
+    ["chatgpt", "银白"],
+    ["claude", "赤陶"],
+    ["gemini", "四色"],
+    ["qwen", "紫"],
+    ["kimi", "黑蓝"],
+    ["minimax", "玫红橙"],
+    ["rose", "红发"]
+  ];
+  function roleLooks(app) {
+    var _a;
+    const enabled = app.opts.rigLooks || (((_a = app.rig) == null ? void 0 : _a.lib) && !app.opts.neutral ? ["blue", "rose"] : null);
+    if (!(enabled == null ? void 0 : enabled.length)) return [];
+    return [...ROLE_LOOKS, ...RIG_COLORS.filter(([id]) => enabled.includes(id)).map(([id, label, scheme = id]) => [
+      id,
+      "分件版 · " + label,
+      "girl",
+      { hat: "maid", rig: true, ...id === "rose" ? { body: "#e5576a" } : { rigScheme: scheme } }
+    ])];
+  }
   var HATS = [["", "无"], ["maid", "女仆头饰"], ["bow", "蝴蝶结"], ["cap", "小帽子"]];
   var BRAINS = [["auto", "自主生活"], ["pet", "宠物（跟随工作状态）"], ["manual", "只听指令"]];
   var PRESETS = [
@@ -8721,6 +9384,7 @@
     _renderAgents() {
       const sc = this.app.world.scene;
       const chars = [...this.app.characters.values()];
+      const appearances = roleLooks(this.app);
       this.el.agents.innerHTML = sc.agents.map((a) => `
       <div class="rk-agent" data-agent="${esc(a.id)}">
         <i style="background:${esc(a.look && a.look.body || "#5b8def")}" data-ag="color" title="换颜色"></i>
@@ -8731,10 +9395,14 @@
       <div class="rk-line" style="margin:-2px 0 8px 22px">
         <select data-ag="brain" data-agent="${esc(a.id)}">${BRAINS.map((b) => `<option value="${b[0]}" ${a.brain === b[0] ? "selected" : ""}>${b[1]}</option>`).join("")}</select>
         <select data-ag="char" data-agent="${esc(a.id)}" title="角色卡：决定台词与喜好"><option value="">（无角色卡）</option>${chars.map((c) => `<option value="${esc(c.id)}" ${a.character === c.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select>
-      </div>`).join("") + `<button class="rk-btn" data-ag="add" style="width:100%">＋ 添加角色</button>
+      </div>`).join("") + `${appearances.length ? `<label class="rk-line">新角色外观
+        <select data-new-role-look>${appearances.map(([id, label]) => `<option value="${id}">${label}</option>`).join("")}</select>
+      </label>` : ""}
+       <button class="rk-btn" data-ag="add" style="width:100%">＋ 添加角色</button>
        <div class="rk-hint">「宠物」模式的角色会跟随 DSH 工作状态（思考/干活/等待/完成/出错）；「自主生活」会自己找家具、找同伴聊天。角色卡决定台词和喜好，可在「素材」页导入 SillyTavern 角色卡。拖动场景里的角色可以挪位置。</div>`;
     }
     _onPanelClick(e) {
+      var _a;
       const app = this.app, world = app.world;
       const tab = e.target.closest("[data-tab]");
       if (tab) {
@@ -8790,8 +9458,10 @@
           const used = new Set(world.scene.agents.map((x) => x.name));
           const name = AGENT_NAMES.find((n) => !used.has(n)) || "小鲸鱼" + (world.scene.agents.length + 1);
           const spot = app.nav.nearestFree(world.room.w / 2, world.room.h / 2, 6) || { x: 1, y: 1 };
-          const look2 = Object.assign({}, pick(WHALE_LOOKS), { hat: Math.random() < 0.3 ? pick(["bow", "cap"]) : "" });
-          this.exec({ t: "agent.add", agent: { id: uid("a"), name, kind: "girl", brain: "auto", x: spot.x, y: spot.y, look: look2 } });
+          const choice = (_a = this.el.agents.querySelector("[data-new-role-look]")) == null ? void 0 : _a.value;
+          const preset = roleLooks(app).find(([id2]) => id2 === choice);
+          const look2 = (preset == null ? void 0 : preset[3]) || { ...pick(WHALE_LOOKS), hat: Math.random() < 0.3 ? pick(["bow", "cap"]) : "" };
+          this.exec({ t: "agent.add", agent: { id: uid("a"), name, kind: (preset == null ? void 0 : preset[2]) || "girl", brain: "auto", x: spot.x, y: spot.y, look: look2 } });
           app.sfx("place");
         } else if (kind === "del" && a) {
           this.exec({ t: "agent.remove", id: a.id });
@@ -13404,6 +14074,7 @@
   var TAB_KIND = "dsh-room";
   var TITLE = "大肥鱼的房间";
   var ASSET_BASE = "/plugins/dsh-room/web/";
+  var packagedLooks = typeof define_ROOMKIT_PACKAGED_LOOKS_default === "undefined" ? void 0 : define_ROOMKIT_PACKAGED_LOOKS_default;
   var STORE_URL = "/plugins/dsh-room/api/store";
   var API_BASE = "api/dsh-room.";
   var LEVELS = { thinking: 1, working: 1, result: 1, waiting: 1, success: 1, error: 1 };
@@ -13651,7 +14322,7 @@
     const packs = window.RoomKitPacks || [];
     const link = createLink(home);
     const ext = makeExt(ctx, link, opts.onFullscreen);
-    const app = mount(el, Object.assign({ storageKey: "dsh-room", assetBase: ASSET_BASE, packs, ext }, opts, home == null ? void 0 : home.options));
+    const app = mount(el, Object.assign({ storageKey: "dsh-room", assetBase: ASSET_BASE, rigLooks: packagedLooks, rigAssetBase: ASSET_BASE + "vendor/", packs, ext }, opts, home == null ? void 0 : home.options));
     app.groupOn = false;
     try {
       app.groupOn = home ? home.group() : localStorage.getItem("dsh-room.group") === "1";

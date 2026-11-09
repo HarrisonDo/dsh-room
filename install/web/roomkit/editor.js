@@ -19,6 +19,25 @@ import { renderScenesPane, onScenesClick, onScenesChange, renderPacksPane, onPac
 const MAT_KINDS = [['wood', '木地板'], ['tile', '瓷砖'], ['carpet', '地毯'], ['stone', '石板'], ['grass', '草地'], ['plain', '纯色']];
 const PATTERNS = [['plain', '纯色'], ['stripes', '竖条纹'], ['dots', '波点'], ['bricks', '砖墙']];
 const AGENT_NAMES = ['小蓝', '泡泡', '团子', '小鲸', '阿肥', '米粒', '豆豆', '浪花'];
+const ROLE_LOOKS = [
+  ['q', 'Q 版大肥鱼', 'girl', { body: '#5b8def', belly: '#eef5ff', hat: 'maid', rig: false }],
+  ['whale', '小鲸鱼 · 球球', 'whale', { body: '#7ec8e3', belly: '#f2fbff', size: 1.1 }],
+  ['legacy', '旧版走路鲸鱼', 'token', { body: '#7fb8d8', accent: '#8fd28f' }],
+];
+const RIG_COLORS = [
+  ['blue', '原版蓝发', 'deepseek'], ['harness', '纯黑'], ['chatgpt', '银白'],
+  ['claude', '赤陶'], ['gemini', '四色'], ['qwen', '紫'], ['kimi', '黑蓝'],
+  ['minimax', '玫红橙'], ['rose', '红发'],
+];
+
+function roleLooks(app) {
+  const enabled = app.opts.rigLooks || (app.rig?.lib && !app.opts.neutral ? ['blue', 'rose'] : null);
+  if (!enabled?.length) return [];
+  return [...ROLE_LOOKS, ...RIG_COLORS.filter(([id]) => enabled.includes(id)).map(([id, label, scheme = id]) => [
+    id, '分件版 · ' + label, 'girl',
+    { hat: 'maid', rig: true, ...(id === 'rose' ? { body: '#e5576a' } : { rigScheme: scheme }) },
+  ])];
+}
 const HATS = [['', '无'], ['maid', '女仆头饰'], ['bow', '蝴蝶结'], ['cap', '小帽子']];
 const BRAINS = [['auto', '自主生活'], ['pet', '宠物（跟随工作状态）'], ['manual', '只听指令']];
 const PRESETS = [
@@ -610,6 +629,7 @@ export class Editor {
   _renderAgents() {
     const sc = this.app.world.scene;
     const chars = [...this.app.characters.values()];
+    const appearances = roleLooks(this.app);
     this.el.agents.innerHTML = sc.agents.map((a) => `
       <div class="rk-agent" data-agent="${esc(a.id)}">
         <i style="background:${esc((a.look && a.look.body) || '#5b8def')}" data-ag="color" title="换颜色"></i>
@@ -621,7 +641,10 @@ export class Editor {
         <select data-ag="brain" data-agent="${esc(a.id)}">${BRAINS.map((b) => `<option value="${b[0]}" ${a.brain === b[0] ? 'selected' : ''}>${b[1]}</option>`).join('')}</select>
         <select data-ag="char" data-agent="${esc(a.id)}" title="角色卡：决定台词与喜好"><option value="">（无角色卡）</option>${chars.map((c) => `<option value="${esc(c.id)}" ${a.character === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>
       </div>`).join('') +
-      `<button class="rk-btn" data-ag="add" style="width:100%">＋ 添加角色</button>
+      `${appearances.length ? `<label class="rk-line">新角色外观
+        <select data-new-role-look>${appearances.map(([id, label]) => `<option value="${id}">${label}</option>`).join('')}</select>
+      </label>` : ''}
+       <button class="rk-btn" data-ag="add" style="width:100%">＋ 添加角色</button>
        <div class="rk-hint">「宠物」模式的角色会跟随 DSH 工作状态（思考/干活/等待/完成/出错）；「自主生活」会自己找家具、找同伴聊天。角色卡决定台词和喜好，可在「素材」页导入 SillyTavern 角色卡。拖动场景里的角色可以挪位置。</div>`;
   }
 
@@ -656,8 +679,10 @@ export class Editor {
         const used = new Set(world.scene.agents.map((x) => x.name));
         const name = AGENT_NAMES.find((n) => !used.has(n)) || '小鲸鱼' + (world.scene.agents.length + 1);
         const spot = app.nav.nearestFree(world.room.w / 2, world.room.h / 2, 6) || { x: 1, y: 1 };
-        const look = Object.assign({}, pick(WHALE_LOOKS), { hat: Math.random() < 0.3 ? pick(['bow', 'cap']) : '' });
-        this.exec({ t: 'agent.add', agent: { id: uid('a'), name, kind: 'girl', brain: 'auto', x: spot.x, y: spot.y, look } });
+        const choice = this.el.agents.querySelector('[data-new-role-look]')?.value;
+        const preset = roleLooks(app).find(([id]) => id === choice);
+        const look = preset?.[3] || { ...pick(WHALE_LOOKS), hat: Math.random() < 0.3 ? pick(['bow', 'cap']) : '' };
+        this.exec({ t: 'agent.add', agent: { id: uid('a'), name, kind: preset?.[2] || 'girl', brain: 'auto', x: spot.x, y: spot.y, look } });
         app.sfx('place');
       } else if (kind === 'del' && a) {
         this.exec({ t: 'agent.remove', id: a.id });

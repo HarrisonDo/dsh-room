@@ -3,6 +3,7 @@ import { homeView } from './home-view.js';
 const el = document.getElementById('room');
 const host = window.roomkitHome;
 const desk = new URLSearchParams(location.search).get('desk') === '1';
+const packagedLooks = typeof ROOMKIT_PACKAGED_LOOKS === 'undefined' ? undefined : ROOMKIT_PACKAGED_LOOKS;
 const notice = document.createElement('span');
 
 function report(error) {
@@ -42,6 +43,7 @@ async function start() {
   el.replaceChildren();
   const app = window.RoomKit.mount(el, {
     ...home.options, desk, coach: false, bridge: false,
+    rigLooks: packagedLooks, rigAssetBase: 'vendor/',
     ext: {
       desk: desk ? window.roomkitDesk : undefined,
       openFull: desk ? () => window.roomkitDesk.openFull() : undefined,

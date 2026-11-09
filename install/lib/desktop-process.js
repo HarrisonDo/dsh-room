@@ -71,7 +71,8 @@ export function createDesktopProcess({ directory, entry, webRoot, onRequest, onE
         cwd: directory,
         env: launchEnvironment(webRoot, userData),
         stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
-        windowsHide: true,
+        // Electron is a GUI executable. On Windows, windowsHide also hides the
+        // first framed BrowserWindow when switching out of the transparent pet.
       });
       run.child = child;
       run.closed = new Promise(resolve => child.once('close', resolve));

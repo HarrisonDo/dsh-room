@@ -63,7 +63,7 @@ export class RigPool {
     if (this.lib) return Promise.resolve(this.lib);
     this.runtime ||= new Promise((resolve, reject) => {
       const script = document.createElement('script');
-      script.src = '/assets/whale-showcase-rig.js';
+      script.src = (this.app.opts.rigAssetBase || '/assets/') + 'whale-showcase-rig.js';
       script.onload = () => {
         if (window.RoomKitRig) resolve(this.lib = window.RoomKitRig);
         else reject(new Error('分件模型未加载'));
@@ -80,7 +80,7 @@ export class RigPool {
   loadScheme(scheme) {
     if (!scheme || !this.app.opts.rigLooks?.includes(scheme)) return null;
     if (!this.schemes.has(scheme)) {
-      this.schemes.set(scheme, fetch(`/assets/whale-scheme-${scheme}.json`).then(response => {
+      this.schemes.set(scheme, fetch(`${this.app.opts.rigAssetBase || '/assets/'}whale-scheme-${scheme}.json`).then(response => {
         if (!response.ok) throw new Error('分件配色未加载');
         return response.json();
       }).catch(error => {
@@ -294,7 +294,7 @@ export function bodyFor(agent, app) {
   const kind = agent.data.kind || 'girl';
   if ((app.opts?.neutral && !app.opts?.rigLooks) || kind === 'token') return new TokenBody(agent);
   if (kind === 'whale') return new WhaleBody(agent);
-  const rig = app.opts?.site ? agent.look.rig === true : agent.look.rig !== false;
+  const rig = (app.opts?.site || app.opts?.rigLooks) ? agent.look.rig === true : agent.look.rig !== false;
   if (kind === 'girl' && rig && app.rig?.available) return new RigBody(agent, app);
   if (kind !== 'girl' && app.opts?.site) return new TokenBody(agent);
   return new GirlBody(agent);
