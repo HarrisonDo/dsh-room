@@ -35,7 +35,7 @@ const html = `<!doctype html>
   <h1>给你的 AI 一个房间</h1>
   <p>打开 Harness → 插件 → 添加插件，把下面的仓库地址粘贴进去，点击「安装」。</p>
   <pre><code>https://github.com/HarrisonDo/dsh-room</code></pre>
-  <p>安装后按 Harness 的提示应用变更，打开「大肥鱼的房间」。试试换房、点灯和聊天，然后点击「放到桌面」。不用下载源码或自己构建。</p>
+  <p>安装后点「立即启用」，打开「大肥鱼的房间」。试试换房、点灯和聊天，然后点击「放到桌面」。不用下载源码或自己构建。</p>
   <p>房间聊天使用你在 Harness 中选好的模型；没有模型时仍可布置和手动互动。首次放到桌面会下载并校验运行组件，显示进度，可取消或重试；之后使用缓存。桌面与 DSH 接续同一个家，DSH 需要保持运行。</p>
   <p>当前版本 ${version}。Windows 桌面仍待实机验收。网页试玩和本机 DSH 存档各自保存。</p>
   <p><a href="https://github.com/HarrisonDo/dsh-room/blob/main/docs/17-%E5%AE%89%E8%A3%85%E4%B8%8E%E6%A1%8C%E9%9D%A2%E4%BD%BF%E7%94%A8.md">完整安装与桌面使用指南</a></p>

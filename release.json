@@ -1,12 +1,12 @@
 {
-  "version": "0.1.0-r03c.1",
+  "version": "0.1.0-r03c.2",
   "package": {
-    "file": "dsh-room-0.1.0-r03c.1.tgz",
-    "sha256": "b9f286a1b900b7e158dc02076e30c95a1917bbcb2c9359df5c3d2d8d861d9064"
+    "file": "dsh-room-0.1.0-r03c.2.tgz",
+    "sha256": "b9715a0dbdc1f94791bb20fccd2798acbd8a81aaa93d659abf3b715f94a9c31f"
   },
   "source": {
-    "file": "dsh-room-0.1.0-r03c.1-source.tar.gz",
-    "sha256": "407f42cee4331ace1a09cba6f6d474d9275acfd5d3205d83f12e9f5ccfb95cfa"
+    "file": "dsh-room-0.1.0-r03c.2-source.tar.gz",
+    "sha256": "65e1a4731828e9290f4d7bff015e9a449b433bcffa5ddba1db6a0ca27c924a84"
   },
   "downloads": "https://mu2a.penguingugu.com/assets/",
   "files": {
@@ -29,7 +29,7 @@
     "lib/work-status.js": "0924d3e07cf56e868828da8f6fc51301d7f17b12eabdd69826aed517a273828f",
     "locales/en.json": "51199d8d35e7811c6c8abcc8bfb6f5b8e5c37e19a8b064ab0194afc6a68cba46",
     "locales/zh.json": "dab27b95bb25c71158e4864f61b5c02e4a836ecbe1cf2fbf963ffc414e955a10",
-    "package.json": "cc6244e52d680a731f9b7ca4fcf0274ff96e622e3aba9d1cbed7c1878363dbb0",
+    "package.json": "876f770c7448e07c261fcc694cb138c1c5cff3ffb697c59d4c4f43050c464c15",
     "scripts/build.mjs": "0968069b1b5c073133c5b7e35ec02fd58e7a01add752813d5b1bfd2ddea74a91",
     "shared/activities.js": "810124aaf6a9e76fe60e8108a356b239f8806d67429ad88006f0e0e19f5f5ef2",
     "shared/agent-request.js": "674e35fdecb8292397976b1688a0f05f04d6bd1ea77b337c40703237e1996aea",
@@ -45,8 +45,8 @@
     "web/dist/desktop-launch.js": "938f9b909a0b747102d2e7b04c3e37c374aeb733d40c4ce7cc10cb1a64b9a163",
     "web/dist/launch.js": "ec21d36aa3d9ba2398523b69a1727c3d85e0a14f20cd6fb3d1e63a5ef679cfed",
     "web/dist/roomkit.js": "44538464d40bf74fc5ba2dfcfd397812c3020eac6269309467daba7995bfe2c7",
-    "web/index.html": "10f20755ba6b34e11987816cf0e5385af72c6a11a8a4b0cc511c301549dcbba2",
-    "web/managed.html": "13245942ab49f236f8d3a5960c1f6ba303b2e53dda8191a25a838770bbb40472",
+    "web/index.html": "b4ac3d527f8be725cbe9ccc0396f5d822e61b5892d695478cf7fc0c0ec635d56",
+    "web/managed.html": "68b84467ce4cb66ddb12708d36ab95ba841df78e128348436765daaa7355a59a",
     "web/packs/example/pack.js": "116116c0b94e3fc1c914a26629a820c73b48c2d249de69e3fbb94e1000614490",
     "web/packs/home/pack.js": "14f7f3f0a3586442e18d94887572f79e94a02ca94bcfdade57c263ae341a097c",
     "web/roomkit/agent-adapter.js": "8675515adf3f69c05a7d4472b1d30f95cf0d4565b4f0dcd706618fa41a36eef7",
