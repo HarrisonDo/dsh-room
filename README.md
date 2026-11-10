@@ -6,7 +6,7 @@
 
 先给自己的 AI 一个可以生活和布置的房间，再把作品分享给愿意来访的人。长期希望从一座公共公园起步，让玩家贡献的场景逐步连接成共同世界。
 
-先在 [网页试玩](https://mu2a.penguingugu.com/) 看看效果。已有 DSH 的用户可以直接安装本仓库，在 DSH 里打开房间，再把同一个家放到桌面。创作分享和共同世界按 [当前路线](docs/10-AI世界分阶段开发计划.md#0-当前发布路线) 逐步推进。
+先在 [网页试玩](https://dshroom.pigeongugu.store/) 看看效果。已有 DSH 的用户可以直接安装本仓库，在 DSH 里打开房间，再把同一个家放到桌面。创作分享和共同世界按 [当前路线](docs/10-AI世界分阶段开发计划.md#0-当前发布路线) 逐步推进。
 
 ![卧室](docs/images/home.jpg)
 
@@ -21,7 +21,7 @@
 - 角色按精力、乐趣和社交需求自主行动。
 - 在 DSH 中显示工作状态，并支持和角色聊天。Agent 工具默认关闭，可选开启。
 - 家具、场景和剧情都是数据，可以用内容包扩展。
-- 世界分享原型：发布固定场景版本、邀请朋友进入、共同完成信标活动并保存本机经历。公开推荐区域的登录和入场已在 mu2a 提供。
+- 世界分享原型：发布固定场景版本、邀请朋友进入、共同完成信标活动并保存本机经历。公开推荐区域的登录和入场已在公网试玩站提供。
 
 ## 安装到 DSH
 
@@ -38,7 +38,7 @@ https://github.com/HarrisonDo/dsh-room
 
 首次放到桌面会自动下载并校验桌面运行组件，界面显示进度，可取消后重试。后续直接使用缓存。DSH 需要保持运行；桌面右键菜单可回到 DSH，房间布置和角色会一起接续。桌面辅助窗也可以打开完整房间继续编辑。
 
-[安装说明与备用下载](https://mu2a.penguingugu.com/assets/dsh-install.html) · [安装与桌面使用指南](docs/17-安装与桌面使用.md) · [反馈问题](https://github.com/HarrisonDo/dsh-room/issues)
+[安装说明与备用下载](https://dshroom.pigeongugu.store/assets/dsh-install.html) · [安装与桌面使用指南](docs/17-安装与桌面使用.md) · [反馈问题](https://github.com/HarrisonDo/dsh-room/issues)
 
 仓库根目录分发已经构建好的验收版本，版本和逐文件校验值在 [release.json](release.json)。`install/` 是该版本的分发快照，开发源码位于 `dsh-room/` 和 `desktop/`。普通用户只需上面的仓库地址；参与开发请看下方「开发」。
 

@@ -42,7 +42,7 @@ try {
     license: manifest.license,
     type: 'module',
     repository: { type: 'git', url: 'https://github.com/HarrisonDo/dsh-room.git' },
-    homepage: 'https://mu2a.penguingugu.com/assets/dsh-install.html',
+    homepage: 'https://dshroom.pigeongugu.store/assets/dsh-install.html',
     bugs: { url: 'https://github.com/HarrisonDo/dsh-room/issues' },
     keywords: manifest.keywords,
     icon: './install/' + manifest.icon.replace(/^\.\//, ''),
@@ -59,7 +59,7 @@ try {
     version,
     package: { file: name + '.tgz', sha256: packageHash },
     source: { file: name + '-source.tar.gz', sha256: sourceHash },
-    downloads: 'https://mu2a.penguingugu.com/assets/',
+    downloads: 'https://dshroom.pigeongugu.store/assets/',
     files,
   };
   await rm(path.join(root, 'install'), { recursive: true, force: true });

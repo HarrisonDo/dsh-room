@@ -19,7 +19,7 @@ DSH 小窗/侧栏/全屏共用 `dsh-room` 存档命名空间，宿主路由可�
 
 ## 已有 DSH：首次体验
 
-在 DSH「插件 → 添加插件」中直接粘贴 `https://github.com/HarrisonDo/dsh-room`，安装完成后点「立即启用」，打开房间。普通用户不需要克隆仓库或进入这个开发子目录。 [安装与桌面使用指南](../docs/17-安装与桌面使用.md) · [备用下载](https://mu2a.penguingugu.com/assets/dsh-install.html)
+在 DSH「插件 → 添加插件」中直接粘贴 `https://github.com/HarrisonDo/dsh-room`，安装完成后点「立即启用」，打开房间。普通用户不需要克隆仓库或进入这个开发子目录。 [安装与桌面使用指南](../docs/17-安装与桌面使用.md) · [备用下载](https://dshroom.pigeongugu.store/assets/dsh-install.html)
 
 点击「放到桌面」会准备桌面组件并打开透明辅助窗，房间、角色、家具包和草稿随窗口接续。模型继续使用 DSH 的选择，DSH 需要保持运行。无模型时可以布置、换房和手动互动。Windows 仍待实机验收。
 

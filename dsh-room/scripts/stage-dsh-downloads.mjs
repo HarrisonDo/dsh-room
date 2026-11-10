@@ -41,7 +41,7 @@ const html = `<!doctype html>
   <p><a href="https://github.com/HarrisonDo/dsh-room/blob/main/docs/17-%E5%AE%89%E8%A3%85%E4%B8%8E%E6%A1%8C%E9%9D%A2%E4%BD%BF%E7%94%A8.md">完整安装与桌面使用指南</a></p>
   <h2>GitHub 连不上时</h2>
   <p>也可以把下面这个固定版本地址粘贴到同一个「添加插件」框：</p>
-  <pre><code>https://mu2a.penguingugu.com/assets/${plugin}</code></pre>
+  <pre><code>https://dshroom.pigeongugu.store/assets/${plugin}</code></pre>
   <p>DSH 的 npm 镜像选项不能替代 GitHub 连接。已经安装旧版时，按 DSH 的插件管理提示卸载后再装；更新前先导出自己的场景。</p>
   <h2>下载与共建</h2>
   <ul>
