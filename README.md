@@ -98,6 +98,10 @@ npm test
 | `deploy/town/` | 小镇的 Docker Compose 部署 |
 | `docs/` | 设计与接入文档 |
 
+## 社区友链
+
+[LINUX DO](https://linux.do/)
+
 ## 许可
 
 本仓库的代码按 AGPL-3.0 发布。源码仓库保留可选 Coopanion 鲸鱼模型，其许可证保留在 `dsh-room/room/vendor/coopanion/`。Q 版鲸鱼娘演示候选使用 Canvas 绘制，包内署名与所含内容见候选的 NOTICE。 [仓库许可证](LICENSE) · [Coopanion](https://github.com/Pal-AI-Lab/Coopanion) · [演示候选署名](dsh-room/release-dsh/NOTICE.md)
